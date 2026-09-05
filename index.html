@@ -23,6 +23,7 @@
 
     <div class="input-group">
         <label>Mês e Ano da Escala:</label>
+        <!-- Este input gera um formato YYYY-MM (ex: 2026-08) -->
         <input type="month" id="mesAnoEscala">
     </div>
 
@@ -36,9 +37,15 @@
     <script src="https://apis.google.com/js/api.js" async defer onload="gapiLoaded()"></script>
 
     <script>
+        // CLIENT_ID EM UMA ÚNICA LINHA
         const CLIENT_ID = '118048571551-37il00plhko6shv5cie9tsi4hbq8cdlk.apps.googleusercontent.com'; 
-        const SPREADSHEET_ID = '1PiE9_fXzQdQcFDARrs1ZmNoi2LKZZ56pFQgJsxp_QZU'; // Pegue na URL da planilha Google
-        const SHEET_RANGE = 'A1:AJ50'; // Ajuste conforme o tamanho da aba da escala
+        const SPREADSHEET_ID = '1PiE9_fXzQdQcFDARrs1ZmNoi2LKZZ56pFQgJsxp_QZU';
+
+        // Array para traduzir o número do mês para o nome
+        const nomesMeses = [
+            "JANEIRO", "FEVEREIRO", "MARÇO", "ABRIL", "MAIO", "JUNHO",
+            "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO"
+        ];
 
         // Dicionário de Turnos
         const turnos = {
@@ -101,21 +108,34 @@
 
         async function sincronizarEscala() {
             const nomeDigitado = document.getElementById('nomeMilitar').value.toUpperCase().trim();
-            const dataEscala = document.getElementById('mesAnoEscala').value; // Formato "YYYY-MM"
+            const dataEscala = document.getElementById('mesAnoEscala').value; 
             
             if(!nomeDigitado || !dataEscala) {
                 alert("Preencha o Nome e o Mês/Ano.");
                 return;
             }
 
+            // O formato vindo do HTML é YYYY-MM (ex: 2026-08)
             const [anoEscala, mesEscala] = dataEscala.split('-');
-            atualizarStatus("Lendo planilha...");
+            
+            // Subtrai 1 do mês pois o array de nomes começa no índice 0 (Janeiro = 0)
+            const nomeDoMes = nomesMeses[parseInt(mesEscala) - 1]; 
+            
+            // MONTAGEM DO NOME DA ABA. 
+            // Padrão atual: "AGOSTO 2026"
+            // Se precisar mudar para "agosto de 2026", use: `${nomeDoMes.toLowerCase()} de ${anoEscala}`
+            const nomeDaAba = `${nomeDoMes} ${anoEscala}`; 
+            
+            // Monta o SHEET_RANGE dinamicamente
+            const rangeDinamico = `'${nomeDaAba}'!A1:AJ50`;
+
+            atualizarStatus(`Lendo planilha na aba: ${nomeDaAba}...`);
 
             try {
                 // 1. Ler os dados da Planilha
                 const response = await gapi.client.sheets.spreadsheets.values.get({
                     spreadsheetId: SPREADSHEET_ID,
-                    range: SHEET_RANGE,
+                    range: rangeDinamico,
                 });
                 
                 const linhas = response.result.values;
@@ -137,7 +157,7 @@
                 atualizarStatus(`Escala encontrada para ${nomeDigitado}. Criando eventos...`);
                 let eventosCriados = 0;
 
-                // 2. Iterar sobre os dias do mês (Assumindo que os dias 1 a 31 estão nas colunas do índice 1 ao 31)
+                // 2. Iterar sobre os dias do mês
                 for (let dia = 1; dia <= 31; dia++) {
                     const turno = linhaMilitar[dia];
                     if (!turno) continue;
@@ -151,14 +171,11 @@
                     };
 
                     if (afastamentos.includes(codTurno)) {
-                        // Evento de Dia Inteiro
                         evento.start = { 'date': dataBaseStr, 'timeZone': 'America/Sao_Paulo' };
-                        // Google Calendar dia inteiro precisa da data do dia seguinte no end
                         let endDate = new Date(anoEscala, parseInt(mesEscala)-1, dia + 1);
                         evento.end = { 'date': endDate.toISOString().split('T')[0], 'timeZone': 'America/Sao_Paulo' };
                     } 
                     else if (turnos[codTurno]) {
-                        // Evento com Horário
                         const tInfo = turnos[codTurno];
                         evento.start = { 'dateTime': `${dataBaseStr}T${tInfo.inicio}-03:00`, 'timeZone': 'America/Sao_Paulo' };
                         
@@ -169,12 +186,12 @@
                         }
                         evento.end = { 'dateTime': `${dataFimStr}T${tInfo.fim}-03:00`, 'timeZone': 'America/Sao_Paulo' };
                     } else {
-                        continue; // Turno vazio ou não reconhecido
+                        continue;
                     }
 
                     // 3. Inserir no Google Calendar
                     await gapi.client.calendar.events.insert({
-                        'calendarId': 'primary', // Agenda principal do usuário logado
+                        'calendarId': 'primary', 
                         'resource': evento
                     });
                     eventosCriados++;
@@ -184,7 +201,7 @@
 
             } catch (err) {
                 console.error(err);
-                atualizarStatus("Erro ao processar: " + err.message);
+                atualizarStatus("Erro ao processar: Verifique se o nome da aba está correto na planilha. Detalhes: " + err.message);
             }
         }
     </script>
