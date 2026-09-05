@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sincronizador de Escala CTA</title>
+    <title>Sincronizador de Escala ATCO TWR-AN</title>
     <style>
         body { font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: auto; }
         button { padding: 10px 20px; font-size: 16px; margin-top: 10px; cursor: pointer; background-color: #4285F4; color: white; border: none; border-radius: 5px; }
@@ -16,7 +16,7 @@
 </head>
 <body>
 
-    <h2>Sincronizador de Escala - CTA</h2>
+    <h2>Sincronizador de Escala ATCO TWR-AN</h2>
     
     <div class="input-group">
         <label>Digite seu Nome de Guerra (exatamente como está na planilha):</label>
@@ -106,7 +106,7 @@
                         document.getElementById('authBtn').style.display = 'none';
                         document.getElementById('syncBtn').style.display = 'inline-block';
                         document.getElementById('syncBtn').disabled = false;
-                        atualizarStatus("Login realizado com sucesso! Verifique se digitou seu nome e clique em Sincronizar.");
+                        atualizarStatus("Login realizado com sucesso! Verifique se digitou seu nome e clique em Sincronizar Escala.");
                     }
                 },
             });
@@ -210,7 +210,7 @@
                     eventosCriados++;
                 }
 
-                atualizarStatus(`Sucesso! ${eventosCriados} eventos coloridos foram injetados na sua agenda.`);
+                atualizarStatus(`Sucesso! ${eventosCriados} eventos foram adicionados na sua agenda.`);
 
             } catch (err) {
                 console.error(err);
