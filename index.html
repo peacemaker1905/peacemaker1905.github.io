@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sincronizador de Escala CTA</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: auto; }
+        button { padding: 10px 20px; font-size: 16px; margin-top: 10px; cursor: pointer; }
+        #status { margin-top: 20px; padding: 10px; border-radius: 5px; background: #f0f0f0; }
+        .input-group { margin: 15px 0; }
+        input { padding: 10px; width: 100%; box-sizing: border-box; }
+    </style>
+</head>
+<body>
+
+    <h2>Sincronizador de Escala - CTA</h2>
+    
+    <div class="input-group">
+        <label>Digite seu Nome de Guerra (exatamente como está na planilha):</label>
+        <input type="text" id="nomeMilitar" placeholder="Ex: SO AZEVEDO">
+    </div>
+
+    <div class="input-group">
+        <label>Mês e Ano da Escala:</label>
+        <input type="month" id="mesAnoEscala">
+    </div>
+
+    <button id="authBtn" onclick="handleAuthClick()">1. Fazer Login no Google</button>
+    <button id="syncBtn" onclick="sincronizarEscala()" style="display:none;" disabled>2. Sincronizar Escala</button>
+
+    <div id="status">Aguardando login...</div>
+
+    <!-- Bibliotecas do Google -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://apis.google.com/js/api.js" async defer onload="gapiLoaded()"></script>
+
+    <script>
+        const CLIENT_ID = 'SEU_CLIENT_ID_AQUI'; 
+        const SPREADSHEET_ID = 'ID_DA_SUA_PLANILHA_AQUI'; // Pegue na URL da planilha Google
+        const SHEET_RANGE = 'A1:AJ50'; // Ajuste conforme o tamanho da aba da escala
+
+        // Dicionário de Turnos
+        const turnos = {
+            "M": { inicio: "06:45:00", fim: "14:15:00", pernoite: false },
+            "MR": { inicio: "08:00:00", fim: "14:00:00", pernoite: false },
+            "R": { inicio: "08:00:00", fim: "17:00:00", pernoite: false },
+            "T": { inicio: "14:15:00", fim: "23:15:00", pernoite: false },
+            "TR": { inicio: "14:00:00", fim: "21:00:00", pernoite: false },
+            "P": { inicio: "23:15:00", fim: "06:45:00", pernoite: true },
+            "S": { inicio: "08:00:00", fim: "17:00:00", pernoite: false },
+            "ADM": { inicio: "08:00:00", fim: "16:00:00", pernoite: false },
+            "RIS": { inicio: "06:45:00", fim: "06:45:00", pernoite: true },
+            "REU": { inicio: "08:00:00", fim: "16:00:00", pernoite: false },
+            "DOU": { inicio: "08:00:00", fim: "16:00:00", pernoite: false },
+            "ING": { inicio: "08:00:00", fim: "16:00:00", pernoite: false },
+            "TO": { inicio: "08:00:00", fim: "16:00:00", pernoite: false }
+        };
+        const afastamentos = ["FÉR", "MISS", "CUR", "LUT", "DM", "FOR"];
+
+        let tokenClient;
+
+        // Inicializa a API do Google (gapi)
+        function gapiLoaded() {
+            gapi.load('client', initializeGapiClient);
+        }
+
+        async function initializeGapiClient() {
+            await gapi.client.init({
+                discoveryDocs: [
+                    "https://sheets.googleapis.com/$discovery/rest?version=v4",
+                    "https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest"
+                ]
+            });
+            initTokenClient();
+        }
+
+        // Inicializa o cliente de Identidade (GIS)
+        function initTokenClient() {
+            tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: CLIENT_ID,
+                scope: 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/spreadsheets.readonly',
+                callback: (tokenResponse) => {
+                    if (tokenResponse && tokenResponse.access_token) {
+                        document.getElementById('authBtn').style.display = 'none';
+                        document.getElementById('syncBtn').style.display = 'inline-block';
+                        document.getElementById('syncBtn').disabled = false;
+                        atualizarStatus("Login realizado com sucesso! Pode sincronizar.");
+                    }
+                },
+            });
+        }
+
+        function handleAuthClick() {
+            tokenClient.requestAccessToken({prompt: 'consent'});
+        }
+
+        function atualizarStatus(msg) {
+            document.getElementById('status').innerText = msg;
+        }
+
+        async function sincronizarEscala() {
+            const nomeDigitado = document.getElementById('nomeMilitar').value.toUpperCase().trim();
+            const dataEscala = document.getElementById('mesAnoEscala').value; // Formato "YYYY-MM"
+            
+            if(!nomeDigitado || !dataEscala) {
+                alert("Preencha o Nome e o Mês/Ano.");
+                return;
+            }
+
+            const [anoEscala, mesEscala] = dataEscala.split('-');
+            atualizarStatus("Lendo planilha...");
+
+            try {
+                // 1. Ler os dados da Planilha
+                const response = await gapi.client.sheets.spreadsheets.values.get({
+                    spreadsheetId: SPREADSHEET_ID,
+                    range: SHEET_RANGE,
+                });
+                
+                const linhas = response.result.values;
+                let linhaMilitar = null;
+
+                // Procurar o nome na primeira coluna (ou colunas iniciais)
+                for (let i = 0; i < linhas.length; i++) {
+                    if (linhas[i][0] && linhas[i][0].toString().toUpperCase().includes(nomeDigitado)) {
+                        linhaMilitar = linhas[i];
+                        break;
+                    }
+                }
+
+                if (!linhaMilitar) {
+                    atualizarStatus("Militar não encontrado na planilha.");
+                    return;
+                }
+
+                atualizarStatus(`Escala encontrada para ${nomeDigitado}. Criando eventos...`);
+                let eventosCriados = 0;
+
+                // 2. Iterar sobre os dias do mês (Assumindo que os dias 1 a 31 estão nas colunas do índice 1 ao 31)
+                for (let dia = 1; dia <= 31; dia++) {
+                    const turno = linhaMilitar[dia];
+                    if (!turno) continue;
+
+                    const codTurno = turno.toString().toUpperCase().trim();
+                    const dataBaseStr = `${anoEscala}-${mesEscala}-${String(dia).padStart(2, '0')}`;
+
+                    let evento = {
+                        'summary': `Serviço/Escala: ${codTurno}`,
+                        'description': 'Gerado automaticamente via Web App.'
+                    };
+
+                    if (afastamentos.includes(codTurno)) {
+                        // Evento de Dia Inteiro
+                        evento.start = { 'date': dataBaseStr, 'timeZone': 'America/Sao_Paulo' };
+                        // Google Calendar dia inteiro precisa da data do dia seguinte no end
+                        let endDate = new Date(anoEscala, parseInt(mesEscala)-1, dia + 1);
+                        evento.end = { 'date': endDate.toISOString().split('T')[0], 'timeZone': 'America/Sao_Paulo' };
+                    } 
+                    else if (turnos[codTurno]) {
+                        // Evento com Horário
+                        const tInfo = turnos[codTurno];
+                        evento.start = { 'dateTime': `${dataBaseStr}T${tInfo.inicio}-03:00`, 'timeZone': 'America/Sao_Paulo' };
+                        
+                        let dataFimStr = dataBaseStr;
+                        if (tInfo.pernoite) {
+                            let nextDate = new Date(anoEscala, parseInt(mesEscala)-1, dia + 1);
+                            dataFimStr = nextDate.toISOString().split('T')[0];
+                        }
+                        evento.end = { 'dateTime': `${dataFimStr}T${tInfo.fim}-03:00`, 'timeZone': 'America/Sao_Paulo' };
+                    } else {
+                        continue; // Turno vazio ou não reconhecido
+                    }
+
+                    // 3. Inserir no Google Calendar
+                    await gapi.client.calendar.events.insert({
+                        'calendarId': 'primary', // Agenda principal do usuário logado
+                        'resource': evento
+                    });
+                    eventosCriados++;
+                }
+
+                atualizarStatus(`Sucesso! ${eventosCriados} eventos criados na sua agenda.`);
+
+            } catch (err) {
+                console.error(err);
+                atualizarStatus("Erro ao processar: " + err.message);
+            }
+        }
+    </script>
+</body>
+</html>
