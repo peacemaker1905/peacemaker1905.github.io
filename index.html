@@ -6,10 +6,12 @@
     <title>Sincronizador de Escala CTA</title>
     <style>
         body { font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: auto; }
-        button { padding: 10px 20px; font-size: 16px; margin-top: 10px; cursor: pointer; }
+        button { padding: 10px 20px; font-size: 16px; margin-top: 10px; cursor: pointer; background-color: #4285F4; color: white; border: none; border-radius: 5px; }
+        button:disabled { background-color: #cccccc; cursor: not-allowed; }
+        #syncBtn { background-color: #34A853; }
         #status { margin-top: 20px; padding: 10px; border-radius: 5px; background: #f0f0f0; }
         .input-group { margin: 15px 0; }
-        input { padding: 10px; width: 100%; box-sizing: border-box; }
+        input { padding: 10px; width: 100%; box-sizing: border-box; font-size: 16px;}
     </style>
 </head>
 <body>
@@ -23,7 +25,6 @@
 
     <div class="input-group">
         <label>Mês e Ano da Escala:</label>
-        <!-- Este input gera um formato YYYY-MM (ex: 2026-08) -->
         <input type="month" id="mesAnoEscala">
     </div>
 
@@ -37,7 +38,7 @@
     <script src="https://apis.google.com/js/api.js" async defer onload="gapiLoaded()"></script>
 
     <script>
-        // CLIENT_ID EM UMA ÚNICA LINHA
+        // CREDENCIAIS
         const CLIENT_ID = '118048571551-37il00plhko6shv5cie9tsi4hbq8cdlk.apps.googleusercontent.com'; 
         const SPREADSHEET_ID = '1PiE9_fXzQdQcFDARrs1ZmNoi2LKZZ56pFQgJsxp_QZU';
 
@@ -47,7 +48,7 @@
             "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO"
         ];
 
-        // Dicionário de Turnos
+        // Dicionário de Turnos (Horários oficiais)
         const turnos = {
             "M": { inicio: "06:45:00", fim: "14:15:00", pernoite: false },
             "MR": { inicio: "08:00:00", fim: "14:00:00", pernoite: false },
@@ -92,7 +93,7 @@
                         document.getElementById('authBtn').style.display = 'none';
                         document.getElementById('syncBtn').style.display = 'inline-block';
                         document.getElementById('syncBtn').disabled = false;
-                        atualizarStatus("Login realizado com sucesso! Pode sincronizar.");
+                        atualizarStatus("Login realizado com sucesso! Verifique se digitou seu nome e o mês e clique em Sincronizar.");
                     }
                 },
             });
@@ -111,56 +112,61 @@
             const dataEscala = document.getElementById('mesAnoEscala').value; 
             
             if(!nomeDigitado || !dataEscala) {
-                alert("Preencha o Nome e o Mês/Ano.");
+                alert("Preencha o Nome e o Mês/Ano antes de sincronizar.");
                 return;
             }
 
-            // O formato vindo do HTML é YYYY-MM (ex: 2026-08)
             const [anoEscala, mesEscala] = dataEscala.split('-');
-            
-            // Subtrai 1 do mês pois o array de nomes começa no índice 0 (Janeiro = 0)
             const nomeDoMes = nomesMeses[parseInt(mesEscala) - 1]; 
             
-            // MONTAGEM DO NOME DA ABA. 
-            // Padrão atual: "AGOSTO 2026"
-            // Se precisar mudar para "agosto de 2026", use: `${nomeDoMes.toLowerCase()} de ${anoEscala}`
-            const nomeDaAba = `${nomeDoMes} ${anoEscala}`; 
-            
-            // Monta o SHEET_RANGE dinamicamente
+            // Monta o nome da aba no formato "agosto de 2026"
+            const nomeDaAba = `${nomeDoMes.toLowerCase()} de ${anoEscala}`; 
             const rangeDinamico = `'${nomeDaAba}'!A1:AJ50`;
 
-            atualizarStatus(`Lendo planilha na aba: ${nomeDaAba}...`);
+            atualizarStatus(`Lendo planilha na aba: "${nomeDaAba}"...`);
 
             try {
-                // 1. Ler os dados da Planilha
                 const response = await gapi.client.sheets.spreadsheets.values.get({
                     spreadsheetId: SPREADSHEET_ID,
                     range: rangeDinamico,
                 });
                 
                 const linhas = response.result.values;
+                if (!linhas || linhas.length === 0) {
+                    atualizarStatus(`Erro: Nenhuma informação encontrada na aba "${nomeDaAba}". Verifique se o mês escolhido já existe na planilha.`);
+                    return;
+                }
+
                 let linhaMilitar = null;
 
-                // Procurar o nome na primeira coluna (ou colunas iniciais)
+                // 1. Procura o nome especificamente na Coluna B (ou A, dependendo de como a API retorna colunas vazias)
                 for (let i = 0; i < linhas.length; i++) {
-                    if (linhas[i][0] && linhas[i][0].toString().toUpperCase().includes(nomeDigitado)) {
+                    let celulaA = linhas[i][0] ? linhas[i][0].toString().toUpperCase() : "";
+                    let celulaB = linhas[i][1] ? linhas[i][1].toString().toUpperCase() : "";
+                    
+                    if (celulaB.includes(nomeDigitado) || celulaA.includes(nomeDigitado)) {
                         linhaMilitar = linhas[i];
                         break;
                     }
                 }
 
                 if (!linhaMilitar) {
-                    atualizarStatus("Militar não encontrado na planilha.");
+                    atualizarStatus(`Militar "${nomeDigitado}" não encontrado. Verifique se o nome está idêntico ao da planilha.`);
                     return;
                 }
 
-                atualizarStatus(`Escala encontrada para ${nomeDigitado}. Criando eventos...`);
+                atualizarStatus(`Escala encontrada para ${nomeDigitado}. Criando eventos no Google Agenda... (Aguarde, não feche a página)`);
                 let eventosCriados = 0;
 
-                // 2. Iterar sobre os dias do mês
+                // 2. Iterar sobre os dias 1 a 31
                 for (let dia = 1; dia <= 31; dia++) {
-                    const turno = linhaMilitar[dia];
-                    if (!turno) continue;
+                    
+                    // Coluna C (Dia 1) geralmente é o índice 2, então Índice = Dia + 1
+                    let indiceColuna = dia + 1; 
+                    
+                    const turno = linhaMilitar[indiceColuna];
+                    
+                    if (!turno || turno.toString().trim() === "") continue;
 
                     const codTurno = turno.toString().toUpperCase().trim();
                     const dataBaseStr = `${anoEscala}-${mesEscala}-${String(dia).padStart(2, '0')}`;
@@ -186,6 +192,7 @@
                         }
                         evento.end = { 'dateTime': `${dataFimStr}T${tInfo.fim}-03:00`, 'timeZone': 'America/Sao_Paulo' };
                     } else {
+                        // Código não mapeado, pula.
                         continue;
                     }
 
@@ -197,11 +204,16 @@
                     eventosCriados++;
                 }
 
-                atualizarStatus(`Sucesso! ${eventosCriados} eventos criados na sua agenda.`);
+                atualizarStatus(`Sucesso! ${eventosCriados} turnos de serviço foram injetados na sua agenda do Google.`);
 
             } catch (err) {
                 console.error(err);
-                atualizarStatus("Erro ao processar: Verifique se o nome da aba está correto na planilha. Detalhes: " + err.message);
+                // Tratamento de erro detalhado para mostrar na tela o que deu errado
+                let mensagemErro = err.message;
+                if (err.result && err.result.error) {
+                    mensagemErro = err.result.error.message;
+                }
+                atualizarStatus("Erro ao processar: " + mensagemErro);
             }
         }
     </script>
