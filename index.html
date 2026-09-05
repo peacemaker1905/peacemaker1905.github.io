@@ -23,13 +23,10 @@
         <input type="text" id="nomeMilitar" placeholder="Ex: SO AZEVEDO">
     </div>
 
-    <div class="input-group">
-        <label>Mês e Ano da Escala:</label>
-        <input type="month" id="mesAnoEscala">
-    </div>
+    <!-- Campo de mês/ano removido para deixar o processo automático e direto -->
 
     <button id="authBtn" onclick="handleAuthClick()">1. Fazer Login no Google</button>
-    <button id="syncBtn" onclick="sincronizarEscala()" style="display:none;" disabled>2. Sincronizar Escala</button>
+    <button id="syncBtn" onclick="sincronizarEscala()" style="display:none;" disabled>2. Sincronizar Escala (Setembro 2026)</button>
 
     <div id="status">Aguardando login...</div>
 
@@ -42,11 +39,12 @@
         const CLIENT_ID = '118048571551-37il00plhko6shv5cie9tsi4hbq8cdlk.apps.googleusercontent.com'; 
         const SPREADSHEET_ID = '1PiE9_fXzQdQcFDARrs1ZmNoi2LKZZ56pFQgJsxp_QZU';
 
-        // Array para traduzir o número do mês para o nome
-        const nomesMeses = [
-            "JANEIRO", "FEVEREIRO", "MARÇO", "ABRIL", "MAIO", "JUNHO",
-            "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO"
-        ];
+        // NOME DA ABA FIXO
+        const NOME_DA_ABA = 'PREVIA SETEMBRO 2026';
+        
+        // ANO E MÊS FIXOS (Para a criação dos eventos no calendário)
+        const anoEscala = '2026';
+        const mesEscala = '09'; // 09 = Setembro
 
         // Dicionário de Turnos (Horários oficiais)
         const turnos = {
@@ -93,7 +91,7 @@
                         document.getElementById('authBtn').style.display = 'none';
                         document.getElementById('syncBtn').style.display = 'inline-block';
                         document.getElementById('syncBtn').disabled = false;
-                        atualizarStatus("Login realizado com sucesso! Verifique se digitou seu nome e o mês e clique em Sincronizar.");
+                        atualizarStatus("Login realizado com sucesso! Verifique se digitou seu nome e clique em Sincronizar.");
                     }
                 },
             });
@@ -109,21 +107,15 @@
 
         async function sincronizarEscala() {
             const nomeDigitado = document.getElementById('nomeMilitar').value.toUpperCase().trim();
-            const dataEscala = document.getElementById('mesAnoEscala').value; 
             
-            if(!nomeDigitado || !dataEscala) {
-                alert("Preencha o Nome e o Mês/Ano antes de sincronizar.");
+            if(!nomeDigitado) {
+                alert("Preencha o Nome antes de sincronizar.");
                 return;
             }
 
-            const [anoEscala, mesEscala] = dataEscala.split('-');
-            const nomeDoMes = nomesMeses[parseInt(mesEscala) - 1]; 
-            
-            // Monta o nome da aba no formato "agosto de 2026"
-            const nomeDaAba = `${nomeDoMes.toLowerCase()} de ${anoEscala}`; 
-            const rangeDinamico = `'${nomeDaAba}'!A1:AJ50`;
+            const rangeDinamico = `'${NOME_DA_ABA}'!A1:AJ50`;
 
-            atualizarStatus(`Lendo planilha na aba: "${nomeDaAba}"...`);
+            atualizarStatus(`Lendo planilha na aba: "${NOME_DA_ABA}"...`);
 
             try {
                 const response = await gapi.client.sheets.spreadsheets.values.get({
@@ -133,13 +125,13 @@
                 
                 const linhas = response.result.values;
                 if (!linhas || linhas.length === 0) {
-                    atualizarStatus(`Erro: Nenhuma informação encontrada na aba "${nomeDaAba}". Verifique se o mês escolhido já existe na planilha.`);
+                    atualizarStatus(`Erro: Nenhuma informação encontrada na aba "${NOME_DA_ABA}".`);
                     return;
                 }
 
                 let linhaMilitar = null;
 
-                // 1. Procura o nome especificamente na Coluna B (ou A, dependendo de como a API retorna colunas vazias)
+                // 1. Procura o nome especificamente na Coluna B (índice 1) ou Coluna A (índice 0)
                 for (let i = 0; i < linhas.length; i++) {
                     let celulaA = linhas[i][0] ? linhas[i][0].toString().toUpperCase() : "";
                     let celulaB = linhas[i][1] ? linhas[i][1].toString().toUpperCase() : "";
@@ -161,7 +153,7 @@
                 // 2. Iterar sobre os dias 1 a 31
                 for (let dia = 1; dia <= 31; dia++) {
                     
-                    // Coluna C (Dia 1) geralmente é o índice 2, então Índice = Dia + 1
+                    // Coluna C (Dia 1) é o índice 2. Portanto, Índice = Dia + 1
                     let indiceColuna = dia + 1; 
                     
                     const turno = linhaMilitar[indiceColuna];
@@ -208,7 +200,6 @@
 
             } catch (err) {
                 console.error(err);
-                // Tratamento de erro detalhado para mostrar na tela o que deu errado
                 let mensagemErro = err.message;
                 if (err.result && err.result.error) {
                     mensagemErro = err.result.error.message;
