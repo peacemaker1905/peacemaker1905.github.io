@@ -115,20 +115,17 @@
 
         function atualizarStatus(msg) { document.getElementById('status').innerText = msg; }
 
-        // Função que interpreta o nome da aba para achar Mês e Ano
         function analisarNomeDaAba(titulo) {
             const nomeStr = titulo.toUpperCase();
             let mesEncontrado = null;
-            let anoEncontrado = new Date().getFullYear().toString(); // Padrão: ano atual
+            let anoEncontrado = new Date().getFullYear().toString(); 
 
-            // Procura ano (4 dígitos seguidos começando com 20)
             const regexAno = /20\d{2}/;
             const matchAno = nomeStr.match(regexAno);
             if (matchAno) {
                 anoEncontrado = matchAno[0];
             }
 
-            // Procura mês
             for (let i = 0; i < mapeamentoMeses.length; i++) {
                 const map = mapeamentoMeses[i];
                 if (map.chaves.some(chave => nomeStr.includes(chave))) {
@@ -140,10 +137,9 @@
             if (mesEncontrado) {
                 return { tituloOriginal: titulo, mes: mesEncontrado, ano: anoEncontrado };
             }
-            return null; // Ignora abas de configuração que não tem mês no nome
+            return null; 
         }
 
-        // Lê a estrutura da planilha e cria as opções na tela
         async function buscarAbasDaPlanilha() {
             atualizarStatus("Analisando estrutura da planilha...");
             try {
@@ -156,6 +152,11 @@
                 let encontrouValida = false;
 
                 abas.forEach(aba => {
+                    // SE A ABA ESTIVER OCULTA NA PLANILHA, PULA E NÃO MOSTRA
+                    if (aba.properties.hidden) {
+                        return; 
+                    }
+
                     const dadosAba = analisarNomeDaAba(aba.properties.title);
                     if (dadosAba) {
                         encontrouValida = true;
@@ -177,7 +178,7 @@
                     document.getElementById('syncBtn').disabled = false;
                     atualizarStatus("Planilha lida com sucesso! Selecione os meses e clique em Sincronizar.");
                 } else {
-                    atualizarStatus("Erro: Nenhuma aba referente a meses foi identificada na planilha.");
+                    atualizarStatus("Aviso: Nenhuma aba visível correspondente a meses foi encontrada.");
                 }
 
             } catch (err) {
@@ -186,7 +187,6 @@
             }
         }
 
-        // Função que gerencia o fluxo de sincronizar múltiplas abas
         async function sincronizarAbasSelecionadas() {
             const nomeDigitado = document.getElementById('nomeMilitar').value.toUpperCase().trim();
             if(!nomeDigitado) {
@@ -203,7 +203,6 @@
             document.getElementById('syncBtn').disabled = true;
             let totalEventosGlobais = 0;
 
-            // Itera sobre cada checkbox marcado sequencialmente
             for (let i = 0; i < checkboxes.length; i++) {
                 const box = checkboxes[i];
                 const nomeAba = box.value;
@@ -222,7 +221,6 @@
             document.getElementById('syncBtn').disabled = false;
         }
 
-        // O motor principal ajustado para receber dados dinâmicos
         async function processarUnicaAba(nomeMilitar, tituloAba, mesEscala, anoEscala) {
             const rangeDinamico = `'${tituloAba}'!A1:AJ50`;
             try {
@@ -247,7 +245,7 @@
 
                 if (!linhaMilitarEncontrada) {
                     console.warn(`Militar não encontrado na aba: ${tituloAba}`);
-                    return 0; // Pula esta aba sem travar o restante
+                    return 0; 
                 }
 
                 let eventosCriados = 0;
@@ -296,7 +294,7 @@
 
             } catch (err) {
                 console.error(`Erro na aba ${tituloAba}:`, err);
-                return 0; // Previne que o erro de uma aba trave a próxima
+                return 0; 
             }
         }
     </script>
