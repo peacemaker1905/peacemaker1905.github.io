@@ -8,10 +8,12 @@
         body { font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: auto; }
         button { padding: 10px 20px; font-size: 16px; margin-top: 10px; cursor: pointer; background-color: #4285F4; color: white; border: none; border-radius: 5px; }
         button:disabled { background-color: #cccccc; cursor: not-allowed; }
-        #syncBtn { background-color: #34A853; }
+        #syncBtn { background-color: #34A853; width: 100%; font-weight: bold; }
         #status { margin-top: 20px; padding: 10px; border-radius: 5px; background: #f0f0f0; }
         .input-group { margin: 15px 0; }
-        input { padding: 10px; width: 100%; box-sizing: border-box; font-size: 16px;}
+        input[type="text"] { padding: 10px; width: 100%; box-sizing: border-box; font-size: 16px;}
+        .checkbox-container { background: #eef2f3; padding: 15px; border-radius: 5px; margin: 15px 0; display: none; }
+        .checkbox-item { margin-bottom: 8px; font-size: 16px; }
     </style>
 </head>
 <body>
@@ -24,27 +26,40 @@
     </div>
 
     <button id="authBtn" onclick="handleAuthClick()">1. Fazer Login no Google</button>
-    <button id="syncBtn" onclick="sincronizarEscala()" style="display:none;" disabled>2. Sincronizar Escala (Setembro 2026)</button>
+    
+    <!-- Container onde as abas aparecerão automaticamente após o login -->
+    <div id="containerAbas" class="checkbox-container">
+        <label><b>Selecione as escalas disponíveis para sincronizar:</b></label>
+        <div id="listaAbas"></div>
+    </div>
+
+    <button id="syncBtn" onclick="sincronizarAbasSelecionadas()" style="display:none;" disabled>2. Sincronizar Abas Selecionadas</button>
 
     <div id="status">Aguardando login...</div>
 
-    <!-- Bibliotecas do Google -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script src="https://apis.google.com/js/api.js" async defer onload="gapiLoaded()"></script>
 
     <script>
-        // CREDENCIAIS
         const CLIENT_ID = '118048571551-37il00plhko6shv5cie9tsi4hbq8cdlk.apps.googleusercontent.com'; 
         const SPREADSHEET_ID = '1PiE9_fXzQdQcFDARrs1ZmNoi2LKZZ56pFQgJsxp_QZU';
 
-        // NOME DA ABA FIXO
-        const NOME_DA_ABA = 'PREVIA SETEMBRO 2026';
-        
-        // ANO E MÊS FIXOS
-        const anoEscala = '2026';
-        const mesEscala = '09'; // 09 = Setembro
+        // Dicionário para interpretação literal de meses
+        const mapeamentoMeses = [
+            { num: "01", chaves: ["JAN"] },
+            { num: "02", chaves: ["FEV"] },
+            { num: "03", chaves: ["MAR"] },
+            { num: "04", chaves: ["ABR"] },
+            { num: "05", chaves: ["MAI"] },
+            { num: "06", chaves: ["JUN"] },
+            { num: "07", chaves: ["JUL"] },
+            { num: "08", chaves: ["AGO"] },
+            { num: "09", chaves: ["SET"] },
+            { num: "10", chaves: ["OUT"] },
+            { num: "11", chaves: ["NOV"] },
+            { num: "12", chaves: ["DEZ"] }
+        ];
 
-        // Dicionário de Turnos (Horários oficiais)
         const turnos = {
             "M": { inicio: "06:45:00", fim: "14:15:00", pernoite: false },
             "MR": { inicio: "08:00:00", fim: "14:00:00", pernoite: false },
@@ -61,31 +76,17 @@
             "TO": { inicio: "08:00:00", fim: "16:00:00", pernoite: false }
         };
         const afastamentos = ["FÉR", "MISS", "CUR", "LUT", "DM", "FOR"];
-
-        // Dicionário de Cores do Google Calendar (ID de 1 a 11)
-        const corAfastamento = "4"; // Flamingo (Rosa avermelhado) para todos os afastamentos
+        const corAfastamento = "4"; 
         
         const coresTurnos = {
-            "M": "7",     // Peacock (Azul Claro)
-            "MR": "7",    // Peacock (Azul Claro)
-            "R": "10",    // Basil (Verde Escuro)
-            "T": "6",     // Tangerine (Laranja)
-            "TR": "6",    // Tangerine (Laranja)
-            "P": "9",     // Blueberry (Azul Escuro)
-            "S": "11",    // Tomato (Vermelho)
-            "ADM": "8",   // Graphite (Cinza)
-            "RIS": "3",   // Grape (Roxo)
-            "REU": "1",   // Lavender (Lilás)
-            "DOU": "1",   // Lavender (Lilás)
-            "ING": "1",   // Lavender (Lilás)
-            "TO": "1"     // Lavender (Lilás)
+            "M": "7", "MR": "7", "R": "10", "T": "6", "TR": "6", 
+            "P": "9", "S": "11", "ADM": "8", "RIS": "3", "REU": "1", 
+            "DOU": "1", "ING": "1", "TO": "1" 
         };
 
         let tokenClient;
 
-        function gapiLoaded() {
-            gapi.load('client', initializeGapiClient);
-        }
+        function gapiLoaded() { gapi.load('client', initializeGapiClient); }
 
         async function initializeGapiClient() {
             await gapi.client.init({
@@ -104,34 +105,126 @@
                 callback: (tokenResponse) => {
                     if (tokenResponse && tokenResponse.access_token) {
                         document.getElementById('authBtn').style.display = 'none';
-                        document.getElementById('syncBtn').style.display = 'inline-block';
-                        document.getElementById('syncBtn').disabled = false;
-                        atualizarStatus("Login realizado com sucesso! Verifique se digitou seu nome e clique em Sincronizar Escala.");
+                        buscarAbasDaPlanilha(); // Dispara a leitura das abas imediatamente após login
                     }
                 },
             });
         }
 
-        function handleAuthClick() {
-            tokenClient.requestAccessToken({prompt: 'consent'});
+        function handleAuthClick() { tokenClient.requestAccessToken({prompt: 'consent'}); }
+
+        function atualizarStatus(msg) { document.getElementById('status').innerText = msg; }
+
+        // Função que interpreta o nome da aba para achar Mês e Ano
+        function analisarNomeDaAba(titulo) {
+            const nomeStr = titulo.toUpperCase();
+            let mesEncontrado = null;
+            let anoEncontrado = new Date().getFullYear().toString(); // Padrão: ano atual
+
+            // Procura ano (4 dígitos seguidos começando com 20)
+            const regexAno = /20\d{2}/;
+            const matchAno = nomeStr.match(regexAno);
+            if (matchAno) {
+                anoEncontrado = matchAno[0];
+            }
+
+            // Procura mês
+            for (let i = 0; i < mapeamentoMeses.length; i++) {
+                const map = mapeamentoMeses[i];
+                if (map.chaves.some(chave => nomeStr.includes(chave))) {
+                    mesEncontrado = map.num;
+                    break;
+                }
+            }
+
+            if (mesEncontrado) {
+                return { tituloOriginal: titulo, mes: mesEncontrado, ano: anoEncontrado };
+            }
+            return null; // Ignora abas de configuração que não tem mês no nome
         }
 
-        function atualizarStatus(msg) {
-            document.getElementById('status').innerText = msg;
+        // Lê a estrutura da planilha e cria as opções na tela
+        async function buscarAbasDaPlanilha() {
+            atualizarStatus("Analisando estrutura da planilha...");
+            try {
+                const response = await gapi.client.sheets.spreadsheets.get({
+                    spreadsheetId: SPREADSHEET_ID
+                });
+                
+                const abas = response.result.sheets;
+                let htmlCheckbox = '';
+                let encontrouValida = false;
+
+                abas.forEach(aba => {
+                    const dadosAba = analisarNomeDaAba(aba.properties.title);
+                    if (dadosAba) {
+                        encontrouValida = true;
+                        htmlCheckbox += `
+                            <div class="checkbox-item">
+                                <label>
+                                    <input type="checkbox" class="aba-selecionada" value="${dadosAba.tituloOriginal}" data-mes="${dadosAba.mes}" data-ano="${dadosAba.ano}" checked>
+                                    ${dadosAba.tituloOriginal} (Ref: ${dadosAba.mes}/${dadosAba.ano})
+                                </label>
+                            </div>
+                        `;
+                    }
+                });
+
+                if (encontrouValida) {
+                    document.getElementById('listaAbas').innerHTML = htmlCheckbox;
+                    document.getElementById('containerAbas').style.display = 'block';
+                    document.getElementById('syncBtn').style.display = 'inline-block';
+                    document.getElementById('syncBtn').disabled = false;
+                    atualizarStatus("Planilha lida com sucesso! Selecione os meses e clique em Sincronizar.");
+                } else {
+                    atualizarStatus("Erro: Nenhuma aba referente a meses foi identificada na planilha.");
+                }
+
+            } catch (err) {
+                console.error(err);
+                atualizarStatus("Erro ao conectar com a planilha: " + err.message);
+            }
         }
 
-        async function sincronizarEscala() {
+        // Função que gerencia o fluxo de sincronizar múltiplas abas
+        async function sincronizarAbasSelecionadas() {
             const nomeDigitado = document.getElementById('nomeMilitar').value.toUpperCase().trim();
-            
             if(!nomeDigitado) {
                 alert("Preencha o Nome antes de sincronizar.");
                 return;
             }
 
-            const rangeDinamico = `'${NOME_DA_ABA}'!A1:AJ50`;
+            const checkboxes = document.querySelectorAll('.aba-selecionada:checked');
+            if (checkboxes.length === 0) {
+                alert("Selecione pelo menos uma escala para sincronizar.");
+                return;
+            }
 
-            atualizarStatus(`Lendo planilha na aba: "${NOME_DA_ABA}"...`);
+            document.getElementById('syncBtn').disabled = true;
+            let totalEventosGlobais = 0;
 
+            // Itera sobre cada checkbox marcado sequencialmente
+            for (let i = 0; i < checkboxes.length; i++) {
+                const box = checkboxes[i];
+                const nomeAba = box.value;
+                const mesAba = box.getAttribute('data-mes');
+                const anoAba = box.getAttribute('data-ano');
+
+                atualizarStatus(`Processando: ${nomeAba} (${i+1}/${checkboxes.length})...`);
+                
+                const qtdCriados = await processarUnicaAba(nomeDigitado, nomeAba, mesAba, anoAba);
+                if (qtdCriados >= 0) {
+                    totalEventosGlobais += qtdCriados;
+                }
+            }
+
+            atualizarStatus(`Processo Concluído! Um total de ${totalEventosGlobais} turnos foram adicionados ao Google Agenda.`);
+            document.getElementById('syncBtn').disabled = false;
+        }
+
+        // O motor principal ajustado para receber dados dinâmicos
+        async function processarUnicaAba(nomeMilitar, tituloAba, mesEscala, anoEscala) {
+            const rangeDinamico = `'${tituloAba}'!A1:AJ50`;
             try {
                 const response = await gapi.client.sheets.spreadsheets.values.get({
                     spreadsheetId: SPREADSHEET_ID,
@@ -139,53 +232,44 @@
                 });
                 
                 const linhas = response.result.values;
-                if (!linhas || linhas.length === 0) {
-                    atualizarStatus(`Erro: Nenhuma informação encontrada na aba "${NOME_DA_ABA}".`);
-                    return;
-                }
+                if (!linhas || linhas.length === 0) return 0;
 
-                let linhaMilitar = null;
-
+                let linhaMilitarEncontrada = null;
                 for (let i = 0; i < linhas.length; i++) {
                     let celulaA = linhas[i][0] ? linhas[i][0].toString().toUpperCase() : "";
                     let celulaB = linhas[i][1] ? linhas[i][1].toString().toUpperCase() : "";
                     
-                    if (celulaB.includes(nomeDigitado) || celulaA.includes(nomeDigitado)) {
-                        linhaMilitar = linhas[i];
+                    if (celulaB.includes(nomeMilitar) || celulaA.includes(nomeMilitar)) {
+                        linhaMilitarEncontrada = linhas[i];
                         break;
                     }
                 }
 
-                if (!linhaMilitar) {
-                    atualizarStatus(`Militar "${nomeDigitado}" não encontrado.`);
-                    return;
+                if (!linhaMilitarEncontrada) {
+                    console.warn(`Militar não encontrado na aba: ${tituloAba}`);
+                    return 0; // Pula esta aba sem travar o restante
                 }
 
-                atualizarStatus(`Escala encontrada para ${nomeDigitado}. Criando eventos no Google Agenda...`);
                 let eventosCriados = 0;
-
                 for (let dia = 1; dia <= 31; dia++) {
                     let indiceColuna = dia + 1; 
-                    const turno = linhaMilitar[indiceColuna];
+                    const turno = linhaMilitarEncontrada[indiceColuna];
                     
                     if (!turno || turno.toString().trim() === "") continue;
 
                     const codTurno = turno.toString().toUpperCase().trim();
                     const dataBaseStr = `${anoEscala}-${mesEscala}-${String(dia).padStart(2, '0')}`;
 
-                    // ALTERAÇÃO 1: O Título (summary) agora é apenas a sigla do turno
                     let evento = {
                         'summary': codTurno,
-                        'description': 'Gerado automaticamente via Web App.'
+                        'description': `Gerado automaticamente via Web App (${tituloAba})`
                     };
 
-                    // ALTERAÇÃO 2: Adição do colorId dependendo do turno
                     if (afastamentos.includes(codTurno)) {
                         evento.start = { 'date': dataBaseStr, 'timeZone': 'America/Sao_Paulo' };
                         let endDate = new Date(anoEscala, parseInt(mesEscala)-1, dia + 1);
                         evento.end = { 'date': endDate.toISOString().split('T')[0], 'timeZone': 'America/Sao_Paulo' };
-                        
-                        evento.colorId = corAfastamento; // Define a cor para afastamentos
+                        evento.colorId = corAfastamento;
                     } 
                     else if (turnos[codTurno]) {
                         const tInfo = turnos[codTurno];
@@ -197,8 +281,7 @@
                             dataFimStr = nextDate.toISOString().split('T')[0];
                         }
                         evento.end = { 'dateTime': `${dataFimStr}T${tInfo.fim}-03:00`, 'timeZone': 'America/Sao_Paulo' };
-                        
-                        evento.colorId = coresTurnos[codTurno]; // Define a cor para os turnos operacionais/administrativos
+                        evento.colorId = coresTurnos[codTurno]; 
                     } else {
                         continue;
                     }
@@ -209,16 +292,11 @@
                     });
                     eventosCriados++;
                 }
-
-                atualizarStatus(`Sucesso! ${eventosCriados} eventos foram adicionados na sua agenda.`);
+                return eventosCriados;
 
             } catch (err) {
-                console.error(err);
-                let mensagemErro = err.message;
-                if (err.result && err.result.error) {
-                    mensagemErro = err.result.error.message;
-                }
-                atualizarStatus("Erro ao processar: " + mensagemErro);
+                console.error(`Erro na aba ${tituloAba}:`, err);
+                return 0; // Previne que o erro de uma aba trave a próxima
             }
         }
     </script>
