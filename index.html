@@ -70,7 +70,7 @@
         const afastamentos = ["FÉR", "MISS", "CUR", "LUT", "DM", "FOR"];
         
         const corAfastamento = "4"; 
-        const corDesconhecido = "5"; // Amarelo (Banana) para turnos não cadastrados
+        const corDesconhecido = "5"; 
         const coresTurnos = {
             "M": "7", "MR": "7", "R": "10", "T": "6", "TR": "6", 
             "P": "9", "S": "11", "ADM": "8", "RIS": "3", "REU": "1", 
@@ -166,7 +166,7 @@
                     document.getElementById('containerAbas').style.display = 'block';
                     document.getElementById('syncBtn').style.display = 'inline-block';
                     document.getElementById('syncBtn').disabled = false;
-                    atualizarStatus("Planilha lida com sucesso! Selecione os meses e clique em Sincronizar.");
+                    atualizarStatus("Planilha lida com sucesso! Selecione as escalas e clique em Sincronizar.");
                 } else {
                     atualizarStatus("Aviso: Nenhuma aba visível correspondente a meses foi encontrada.");
                 }
@@ -191,7 +191,9 @@
             }
 
             document.getElementById('syncBtn').disabled = true;
-            let totalEventosGlobais = 0;
+            let totalInseridos = 0;
+            let totalRemovidos = 0;
+            let totalMantidos = 0;
 
             for (let i = 0; i < checkboxes.length; i++) {
                 const box = checkboxes[i];
@@ -201,26 +203,56 @@
 
                 atualizarStatus(`Processando: ${nomeAba} (${i+1}/${checkboxes.length})...`);
                 
-                const qtdCriados = await processarUnicaAba(nomeDigitado, nomeAba, mesAba, anoAba);
-                if (qtdCriados >= 0) {
-                    totalEventosGlobais += qtdCriados;
+                const resultado = await processarUnicaAba(nomeDigitado, nomeAba, mesAba, anoAba);
+                if (resultado) {
+                    totalInseridos += resultado.inseridos;
+                    totalRemovidos += resultado.removidos;
+                    totalMantidos += resultado.mantidos;
                 }
             }
 
-            atualizarStatus(`Processo Concluído! Um total de ${totalEventosGlobais} turnos foram adicionados ao Google Agenda.`);
+            atualizarStatus(`Processo Concluído! \n🟢 ${totalInseridos} novos turnos adicionados \n🔴 ${totalRemovidos} turnos deletados (escala alterada) \n⚪ ${totalMantidos} turnos já existiam e foram mantidos.`);
             document.getElementById('syncBtn').disabled = false;
         }
 
         async function processarUnicaAba(nomeMilitar, tituloAba, mesEscala, anoEscala) {
-            const rangeDinamico = `'${tituloAba}'!A1:AJ50`;
             try {
-                const response = await gapi.client.sheets.spreadsheets.values.get({
+                // 1. LER AGENDA ATUAL (BUSCAR EVENTOS EXISTENTES)
+                const primeiroDia = new Date(anoEscala, parseInt(mesEscala) - 1, 1).toISOString();
+                const ultimoDia = new Date(anoEscala, parseInt(mesEscala), 1).toISOString(); // 1º dia do mês seguinte
+
+                const responseCal = await gapi.client.calendar.events.list({
+                    'calendarId': 'primary',
+                    'timeMin': primeiroDia,
+                    'timeMax': ultimoDia,
+                    'maxResults': 2500
+                });
+
+                // Filtra apenas eventos criados pelo sistema
+                const eventosExistentes = (responseCal.result.items || []).filter(ev => 
+                    ev.description && ev.description.includes('Gerado automaticamente via Web App')
+                );
+
+                // Mapeia eventos existentes por chave única: "DATA_TURNO" (Ex: "2026-09-01_M")
+                let mapaExistentes = {};
+                eventosExistentes.forEach(ev => {
+                    let dataBaseStr = ev.start.date || (ev.start.dateTime ? ev.start.dateTime.substring(0, 10) : null);
+                    if (dataBaseStr && ev.summary) {
+                        const chave = `${dataBaseStr}_${ev.summary.toUpperCase().trim()}`;
+                        mapaExistentes[chave] = ev;
+                    }
+                });
+
+
+                // 2. LER PLANILHA (CRIAR LISTA DESEJADA)
+                const rangeDinamico = `'${tituloAba}'!A1:AJ50`;
+                const responseSheets = await gapi.client.sheets.spreadsheets.values.get({
                     spreadsheetId: SPREADSHEET_ID,
                     range: rangeDinamico,
                 });
                 
-                const linhas = response.result.values;
-                if (!linhas || linhas.length === 0) return 0;
+                const linhas = responseSheets.result.values;
+                if (!linhas || linhas.length === 0) return null;
 
                 let linhaMilitarEncontrada = null;
                 for (let i = 0; i < linhas.length; i++) {
@@ -235,10 +267,11 @@
 
                 if (!linhaMilitarEncontrada) {
                     console.warn(`Militar não encontrado na aba: ${tituloAba}`);
-                    return 0; 
+                    return null; 
                 }
 
-                let eventosCriados = 0;
+                let turnosDesejados = [];
+
                 for (let dia = 1; dia <= 31; dia++) {
                     let indiceColuna = dia + 1; 
                     const conteudoCelula = linhaMilitarEncontrada[indiceColuna];
@@ -246,8 +279,6 @@
                     if (!conteudoCelula || conteudoCelula.toString().trim() === "") continue;
 
                     const dataBaseStr = `${anoEscala}-${mesEscala}-${String(dia).padStart(2, '0')}`;
-
-                    // DIVIDE A CÉLULA POR BARRA (/) OU QUEBRA DE LINHA (\n)
                     const turnosDoDia = conteudoCelula.toString().toUpperCase().split(/[\/\n]+/).map(t => t.trim()).filter(t => t !== "");
 
                     for (const codTurno of turnosDoDia) {
@@ -275,24 +306,54 @@
                             evento.colorId = coresTurnos[codTurno]; 
                         } 
                         else {
-                            // Turno Desconhecido/Não Cadastrado (Fallback 08:00 às 16:00)
                             evento.start = { 'dateTime': `${dataBaseStr}T08:00:00-03:00`, 'timeZone': 'America/Sao_Paulo' };
                             evento.end = { 'dateTime': `${dataBaseStr}T16:00:00-03:00`, 'timeZone': 'America/Sao_Paulo' };
                             evento.colorId = corDesconhecido;
                         }
 
-                        await gapi.client.calendar.events.insert({
-                            'calendarId': 'primary', 
-                            'resource': evento
+                        turnosDesejados.push({
+                            chave: `${dataBaseStr}_${codTurno}`,
+                            corpo: evento
                         });
-                        eventosCriados++;
                     }
                 }
-                return eventosCriados;
+
+                // 3. COMPARAR E APLICAR (O DIFF MÁGICO)
+                let inseridos = 0;
+                let removidos = 0;
+                let mantidos = 0;
+
+                const chavesDesejadas = turnosDesejados.map(t => t.chave);
+
+                // A) Apagar eventos antigos (Na agenda, mas não na planilha atual)
+                for (const chaveExistente in mapaExistentes) {
+                    if (!chavesDesejadas.includes(chaveExistente)) {
+                        await gapi.client.calendar.events.delete({
+                            'calendarId': 'primary',
+                            'eventId': mapaExistentes[chaveExistente].id
+                        });
+                        removidos++;
+                    }
+                }
+
+                // B) Criar eventos novos ou Manter os que já bateram
+                for (const turno of turnosDesejados) {
+                    if (!mapaExistentes[turno.chave]) {
+                        await gapi.client.calendar.events.insert({
+                            'calendarId': 'primary', 
+                            'resource': turno.corpo
+                        });
+                        inseridos++;
+                    } else {
+                        mantidos++; // Já existe na agenda, ignora a inserção
+                    }
+                }
+
+                return { inseridos, removidos, mantidos };
 
             } catch (err) {
                 console.error(`Erro na aba ${tituloAba}:`, err);
-                return 0; 
+                return null; 
             }
         }
     </script>
