@@ -27,7 +27,6 @@
 
     <button id="authBtn" onclick="handleAuthClick()">1. Fazer Login no Google</button>
     
-    <!-- Container onde as abas aparecerão automaticamente após o login -->
     <div id="containerAbas" class="checkbox-container">
         <label><b>Selecione as escalas disponíveis para sincronizar:</b></label>
         <div id="listaAbas"></div>
@@ -44,20 +43,13 @@
         const CLIENT_ID = '118048571551-37il00plhko6shv5cie9tsi4hbq8cdlk.apps.googleusercontent.com'; 
         const SPREADSHEET_ID = '1PiE9_fXzQdQcFDARrs1ZmNoi2LKZZ56pFQgJsxp_QZU';
 
-        // Dicionário para interpretação literal de meses
         const mapeamentoMeses = [
-            { num: "01", chaves: ["JAN"] },
-            { num: "02", chaves: ["FEV"] },
-            { num: "03", chaves: ["MAR"] },
-            { num: "04", chaves: ["ABR"] },
-            { num: "05", chaves: ["MAI"] },
-            { num: "06", chaves: ["JUN"] },
-            { num: "07", chaves: ["JUL"] },
-            { num: "08", chaves: ["AGO"] },
-            { num: "09", chaves: ["SET"] },
-            { num: "10", chaves: ["OUT"] },
-            { num: "11", chaves: ["NOV"] },
-            { num: "12", chaves: ["DEZ"] }
+            { num: "01", chaves: ["JAN"] }, { num: "02", chaves: ["FEV"] },
+            { num: "03", chaves: ["MAR"] }, { num: "04", chaves: ["ABR"] },
+            { num: "05", chaves: ["MAI"] }, { num: "06", chaves: ["JUN"] },
+            { num: "07", chaves: ["JUL"] }, { num: "08", chaves: ["AGO"] },
+            { num: "09", chaves: ["SET"] }, { num: "10", chaves: ["OUT"] },
+            { num: "11", chaves: ["NOV"] }, { num: "12", chaves: ["DEZ"] }
         ];
 
         const turnos = {
@@ -76,8 +68,9 @@
             "TO": { inicio: "08:00:00", fim: "16:00:00", pernoite: false }
         };
         const afastamentos = ["FÉR", "MISS", "CUR", "LUT", "DM", "FOR"];
-        const corAfastamento = "4"; 
         
+        const corAfastamento = "4"; 
+        const corDesconhecido = "5"; // Amarelo (Banana) para turnos não cadastrados
         const coresTurnos = {
             "M": "7", "MR": "7", "R": "10", "T": "6", "TR": "6", 
             "P": "9", "S": "11", "ADM": "8", "RIS": "3", "REU": "1", 
@@ -105,7 +98,7 @@
                 callback: (tokenResponse) => {
                     if (tokenResponse && tokenResponse.access_token) {
                         document.getElementById('authBtn').style.display = 'none';
-                        buscarAbasDaPlanilha(); // Dispara a leitura das abas imediatamente após login
+                        buscarAbasDaPlanilha(); 
                     }
                 },
             });
@@ -152,10 +145,7 @@
                 let encontrouValida = false;
 
                 abas.forEach(aba => {
-                    // SE A ABA ESTIVER OCULTA NA PLANILHA, PULA E NÃO MOSTRA
-                    if (aba.properties.hidden) {
-                        return; 
-                    }
+                    if (aba.properties.hidden) return; 
 
                     const dadosAba = analisarNomeDaAba(aba.properties.title);
                     if (dadosAba) {
@@ -251,44 +241,52 @@
                 let eventosCriados = 0;
                 for (let dia = 1; dia <= 31; dia++) {
                     let indiceColuna = dia + 1; 
-                    const turno = linhaMilitarEncontrada[indiceColuna];
+                    const conteudoCelula = linhaMilitarEncontrada[indiceColuna];
                     
-                    if (!turno || turno.toString().trim() === "") continue;
+                    if (!conteudoCelula || conteudoCelula.toString().trim() === "") continue;
 
-                    const codTurno = turno.toString().toUpperCase().trim();
                     const dataBaseStr = `${anoEscala}-${mesEscala}-${String(dia).padStart(2, '0')}`;
 
-                    let evento = {
-                        'summary': codTurno,
-                        'description': `Gerado automaticamente via Web App (${tituloAba})`
-                    };
+                    // DIVIDE A CÉLULA POR BARRA (/) OU QUEBRA DE LINHA (\n)
+                    const turnosDoDia = conteudoCelula.toString().toUpperCase().split(/[\/\n]+/).map(t => t.trim()).filter(t => t !== "");
 
-                    if (afastamentos.includes(codTurno)) {
-                        evento.start = { 'date': dataBaseStr, 'timeZone': 'America/Sao_Paulo' };
-                        let endDate = new Date(anoEscala, parseInt(mesEscala)-1, dia + 1);
-                        evento.end = { 'date': endDate.toISOString().split('T')[0], 'timeZone': 'America/Sao_Paulo' };
-                        evento.colorId = corAfastamento;
-                    } 
-                    else if (turnos[codTurno]) {
-                        const tInfo = turnos[codTurno];
-                        evento.start = { 'dateTime': `${dataBaseStr}T${tInfo.inicio}-03:00`, 'timeZone': 'America/Sao_Paulo' };
-                        
-                        let dataFimStr = dataBaseStr;
-                        if (tInfo.pernoite) {
-                            let nextDate = new Date(anoEscala, parseInt(mesEscala)-1, dia + 1);
-                            dataFimStr = nextDate.toISOString().split('T')[0];
+                    for (const codTurno of turnosDoDia) {
+                        let evento = {
+                            'summary': codTurno,
+                            'description': `Gerado automaticamente via Web App (${tituloAba})`
+                        };
+
+                        if (afastamentos.includes(codTurno)) {
+                            evento.start = { 'date': dataBaseStr, 'timeZone': 'America/Sao_Paulo' };
+                            let endDate = new Date(anoEscala, parseInt(mesEscala)-1, dia + 1);
+                            evento.end = { 'date': endDate.toISOString().split('T')[0], 'timeZone': 'America/Sao_Paulo' };
+                            evento.colorId = corAfastamento;
+                        } 
+                        else if (turnos[codTurno]) {
+                            const tInfo = turnos[codTurno];
+                            evento.start = { 'dateTime': `${dataBaseStr}T${tInfo.inicio}-03:00`, 'timeZone': 'America/Sao_Paulo' };
+                            
+                            let dataFimStr = dataBaseStr;
+                            if (tInfo.pernoite) {
+                                let nextDate = new Date(anoEscala, parseInt(mesEscala)-1, dia + 1);
+                                dataFimStr = nextDate.toISOString().split('T')[0];
+                            }
+                            evento.end = { 'dateTime': `${dataFimStr}T${tInfo.fim}-03:00`, 'timeZone': 'America/Sao_Paulo' };
+                            evento.colorId = coresTurnos[codTurno]; 
+                        } 
+                        else {
+                            // Turno Desconhecido/Não Cadastrado (Fallback 08:00 às 16:00)
+                            evento.start = { 'dateTime': `${dataBaseStr}T08:00:00-03:00`, 'timeZone': 'America/Sao_Paulo' };
+                            evento.end = { 'dateTime': `${dataBaseStr}T16:00:00-03:00`, 'timeZone': 'America/Sao_Paulo' };
+                            evento.colorId = corDesconhecido;
                         }
-                        evento.end = { 'dateTime': `${dataFimStr}T${tInfo.fim}-03:00`, 'timeZone': 'America/Sao_Paulo' };
-                        evento.colorId = coresTurnos[codTurno]; 
-                    } else {
-                        continue;
-                    }
 
-                    await gapi.client.calendar.events.insert({
-                        'calendarId': 'primary', 
-                        'resource': evento
-                    });
-                    eventosCriados++;
+                        await gapi.client.calendar.events.insert({
+                            'calendarId': 'primary', 
+                            'resource': evento
+                        });
+                        eventosCriados++;
+                    }
                 }
                 return eventosCriados;
 
