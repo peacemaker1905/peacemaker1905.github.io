@@ -28,7 +28,7 @@
     <button id="authBtn" onclick="handleAuthClick()">1. Fazer Login no Google</button>
     
     <div id="containerAbas" class="checkbox-container">
-        <label><b>Selecione os meses disponíveis para sincronizar:</b></label>
+        <label><b>Selecione as abas/meses disponíveis para sincronizar:</b></label>
         <div id="listaAbas"></div>
     </div>
 
@@ -40,10 +40,7 @@
     <script src="https://apis.google.com/js/api.js" async defer onload="gapiLoaded()"></script>
 
     <script>
-        // MANTENHA SEU CLIENT ID
         const CLIENT_ID = '118048571551-37il00plhko6shv5cie9tsi4hbq8cdlk.apps.googleusercontent.com'; 
-        
-        // NOVO ID DA PLANILHA
         const SPREADSHEET_ID = '1bH-0Ohfq7ybvg5B_8JWk0PHusHLWN4hmWW8Y8ZuaOfQ';
 
         const mapeamentoMeses = [
@@ -55,10 +52,11 @@
             { num: "11", chaves: ["NOV"] }, { num: "12", chaves: ["DEZ"] }
         ];
 
-        // APENAS OS DOIS TURNOS DA NOVA ESCALA
+        // Definição dos 3 Turnos
         const turnos = {
-            "1º TURNO": { inicio: "06:45:00", fim: "18:45:00", pernoite: false, cor: "7" }, // Cor azul (exemplo)
-            "2º TURNO": { inicio: "18:45:00", fim: "06:45:00", pernoite: true, cor: "9" }   // Cor roxa (exemplo)
+            "1º TURNO": { inicio: "06:45:00", fim: "18:45:00", pernoite: false, cor: "7" }, // Azul
+            "2º TURNO": { inicio: "18:45:00", fim: "06:45:00", pernoite: true, cor: "9" },  // Roxo
+            "3º TURNO": { inicio: "07:00:00", fim: "19:00:00", pernoite: false, cor: "10" } // Verde
         };
 
         let tokenClient;
@@ -146,14 +144,20 @@
                     document.getElementById('containerAbas').style.display = 'block';
                     document.getElementById('syncBtn').style.display = 'inline-block';
                     document.getElementById('syncBtn').disabled = false;
-                    atualizarStatus("Planilha lida! Selecione os meses e clique em Sincronizar.");
+                    atualizarStatus("Planilha lida! Selecione as abas e clique em Sincronizar.");
                 } else {
                     atualizarStatus("Aviso: Nenhuma aba visível correspondente a meses foi encontrada.");
                 }
 
             } catch (err) {
                 console.error(err);
-                atualizarStatus("Erro ao conectar com a planilha: " + err.message);
+                let msgErro = "Erro desconhecido.";
+                if (err.result && err.result.error && err.result.error.message) {
+                    msgErro = err.result.error.message;
+                } else if (err.message) {
+                    msgErro = err.message;
+                }
+                atualizarStatus("Erro ao conectar com a planilha: " + msgErro);
             }
         }
 
@@ -195,7 +199,6 @@
             document.getElementById('syncBtn').disabled = false;
         }
 
-        // Função Auxiliar para montar a estrutura do evento a ser injetado na API
         function criarObjetoEvento(nomeTurno, dataBaseStr, anoEscala, mesEscala, dia, tituloAba) {
             const tInfo = turnos[nomeTurno];
             let evento = {
@@ -207,7 +210,7 @@
             evento.start = { 'dateTime': `${dataBaseStr}T${tInfo.inicio}-03:00`, 'timeZone': 'America/Sao_Paulo' };
             
             let dataFimStr = dataBaseStr;
-            if (tInfo.pernoite) { // Adiciona +1 dia se for o 2º Turno
+            if (tInfo.pernoite) { 
                 let nextDate = new Date(anoEscala, parseInt(mesEscala)-1, dia + 1);
                 const y = nextDate.getFullYear();
                 const m = String(nextDate.getMonth() + 1).padStart(2, '0');
@@ -217,14 +220,13 @@
             evento.end = { 'dateTime': `${dataFimStr}T${tInfo.fim}-03:00`, 'timeZone': 'America/Sao_Paulo' };
 
             return {
-                chave: `${dataBaseStr}_${nomeTurno}`, // Ex: "2026-09-01_1º TURNO"
+                chave: `${dataBaseStr}_${nomeTurno}`, 
                 corpo: evento
             };
         }
 
         async function processarUnicaAba(codigoOperador, tituloAba, mesEscala, anoEscala) {
             try {
-                // 1. LER AGENDA ATUAL DO GOOGLE CALENDAR
                 const primeiroDia = new Date(anoEscala, parseInt(mesEscala) - 1, 1).toISOString();
                 const ultimoDia = new Date(anoEscala, parseInt(mesEscala), 1).toISOString();
 
@@ -248,9 +250,8 @@
                     }
                 });
 
-                // 2. LER PLANILHA NOVA E MAPEAMENTO DE DIAS/TURNOS
-                // A10 até G45 cobre folgadamente os dias de 1 a 31 e as colunas (A=0 ... G=6)
-                const rangeDinamico = `'${tituloAba}'!A10:G45`;
+                // Expandido até a coluna K (índice 10)
+                const rangeDinamico = `'${tituloAba}'!A10:K45`;
                 const responseSheets = await gapi.client.sheets.spreadsheets.values.get({
                     spreadsheetId: SPREADSHEET_ID,
                     range: rangeDinamico,
@@ -260,40 +261,53 @@
                 if (!linhas || linhas.length === 0) return null;
 
                 let turnosDesejados = [];
+                
+                const isCMM = tituloAba.toUpperCase().includes('CMM');
 
                 for (let i = 0; i < linhas.length; i++) {
                     const linha = linhas[i];
-                    if (!linha || !linha[0]) continue; // Pula linhas vazias
+                    if (!linha || !linha[0]) continue; 
 
                     const diaStr = linha[0].toString().trim();
                     const dia = parseInt(diaStr);
                     
-                    // Se a Coluna A não for um número de 1 a 31, ignora a linha
                     if (isNaN(dia) || dia < 1 || dia > 31) continue; 
 
                     const dataBaseStr = `${anoEscala}-${mesEscala}-${String(dia).padStart(2, '0')}`;
 
-                    // --- Análise do 1º Turno (Colunas C, D, E) correspondente aos índices [2, 3, 4] ---
+                    // --- 1º Turno (Colunas C, D, E) [índices 2, 3, 4] -> IGUAL PARA EMS E CMM ---
                     const turno1 = [linha[2], linha[3], linha[4]];
                     if (turno1.some(cel => cel && cel.toString().toUpperCase().trim() === codigoOperador)) {
                         turnosDesejados.push(criarObjetoEvento("1º TURNO", dataBaseStr, anoEscala, mesEscala, dia, tituloAba));
                     }
 
-                    // --- Análise do 2º Turno (Colunas F, G) correspondente aos índices [5, 6] ---
-                    const turno2 = [linha[5], linha[6]];
-                    if (turno2.some(cel => cel && cel.toString().toUpperCase().trim() === codigoOperador)) {
-                        turnosDesejados.push(criarObjetoEvento("2º TURNO", dataBaseStr, anoEscala, mesEscala, dia, tituloAba));
+                    if (isCMM) {
+                        // --- 2º Turno CMM (Colunas F, G, H) [índices 5, 6, 7] ---
+                        const turno2 = [linha[5], linha[6], linha[7]];
+                        if (turno2.some(cel => cel && cel.toString().toUpperCase().trim() === codigoOperador)) {
+                            turnosDesejados.push(criarObjetoEvento("2º TURNO", dataBaseStr, anoEscala, mesEscala, dia, tituloAba));
+                        }
+
+                        // --- 3º Turno CMM (Colunas I, J, K) [índices 8, 9, 10] ---
+                        const turno3 = [linha[8], linha[9], linha[10]];
+                        if (turno3.some(cel => cel && cel.toString().toUpperCase().trim() === codigoOperador)) {
+                            turnosDesejados.push(criarObjetoEvento("3º TURNO", dataBaseStr, anoEscala, mesEscala, dia, tituloAba));
+                        }
+                    } else {
+                        // --- 2º Turno EMS (Colunas F, G) [índices 5, 6] ---
+                        const turno2 = [linha[5], linha[6]];
+                        if (turno2.some(cel => cel && cel.toString().toUpperCase().trim() === codigoOperador)) {
+                            turnosDesejados.push(criarObjetoEvento("2º TURNO", dataBaseStr, anoEscala, mesEscala, dia, tituloAba));
+                        }
                     }
                 }
 
-                // 3. COMPARAR E APLICAR AS MUDANÇAS (CRIAR, MANTER OU DELETAR)
                 let inseridos = 0;
                 let removidos = 0;
                 let mantidos = 0;
 
                 const chavesDesejadas = turnosDesejados.map(t => t.chave);
 
-                // A) Apagar turnos na agenda que não estão mais na planilha
                 for (const chaveExistente in mapaExistentes) {
                     if (!chavesDesejadas.includes(chaveExistente)) {
                         await gapi.client.calendar.events.delete({
@@ -304,7 +318,6 @@
                     }
                 }
 
-                // B) Criar turnos novos
                 for (const turno of turnosDesejados) {
                     if (!mapaExistentes[turno.chave]) {
                         await gapi.client.calendar.events.insert({
