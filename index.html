@@ -9,7 +9,7 @@
         button { padding: 10px 20px; font-size: 16px; margin-top: 10px; cursor: pointer; background-color: #4285F4; color: white; border: none; border-radius: 5px; }
         button:disabled { background-color: #cccccc; cursor: not-allowed; }
         #syncBtn { background-color: #34A853; width: 100%; font-weight: bold; }
-        #status { margin-top: 20px; padding: 10px; border-radius: 5px; background: #f0f0f0; }
+        #status { margin-top: 20px; padding: 10px; border-radius: 5px; background: #f0f0f0; white-space: pre-line; }
         .input-group { margin: 15px 0; }
         input[type="text"] { padding: 10px; width: 100%; box-sizing: border-box; font-size: 16px; text-transform: uppercase;}
         .checkbox-container { background: #eef2f3; padding: 15px; border-radius: 5px; margin: 15px 0; display: none; }
@@ -52,7 +52,6 @@
             { num: "11", chaves: ["NOV"] }, { num: "12", chaves: ["DEZ"] }
         ];
 
-        // Definição dos 3 Turnos
         const turnos = {
             "1º TURNO": { inicio: "06:45:00", fim: "18:45:00", pernoite: false, cor: "7" }, // Azul
             "2º TURNO": { inicio: "18:45:00", fim: "06:45:00", pernoite: true, cor: "9" },  // Roxo
@@ -195,16 +194,25 @@
                 }
             }
 
-            atualizarStatus(`Processo Concluído! \n🟢 ${totalInseridos} turnos adicionados \n🔴 ${totalRemovidos} turnos deletados (escala alterada) \n⚪ ${totalMantidos} turnos idênticos mantidos.`);
+            atualizarStatus(`Processo Concluído!\n🟢 ${totalInseridos} turnos adicionados\n🔴 ${totalRemovidos} turnos deletados (escala alterada ou atualização de sistema)\n⚪ ${totalMantidos} turnos idênticos mantidos.`);
             document.getElementById('syncBtn').disabled = false;
         }
 
         function criarObjetoEvento(nomeTurno, dataBaseStr, anoEscala, mesEscala, dia, tituloAba) {
             const tInfo = turnos[nomeTurno];
+            
+            // Criação da Chave Única e Blindada para o App
+            const chaveUnica = `${tituloAba}_${dataBaseStr}_${nomeTurno}`;
+
             let evento = {
                 'summary': nomeTurno,
                 'description': `Gerado automaticamente via Web App (${tituloAba})`,
-                'colorId': tInfo.cor
+                'colorId': tInfo.cor,
+                'extendedProperties': {
+                    'private': {
+                        'appKey': chaveUnica // O carimbo invisível do evento!
+                    }
+                }
             };
 
             evento.start = { 'dateTime': `${dataBaseStr}T${tInfo.inicio}-03:00`, 'timeZone': 'America/Sao_Paulo' };
@@ -220,18 +228,22 @@
             evento.end = { 'dateTime': `${dataFimStr}T${tInfo.fim}-03:00`, 'timeZone': 'America/Sao_Paulo' };
 
             return {
-                chave: `${dataBaseStr}_${nomeTurno}`, 
+                chave: chaveUnica, 
                 corpo: evento
             };
         }
 
-        // Função segura para checar se a letra existe nas colunas informadas
+        // Função melhorada que entende se a célula tem o nome todo (ex: "C 2S BMT CÍNTIA") ou só a letra
         function verificaTurno(linha, indices, codigoDesejado) {
             for (let i = 0; i < indices.length; i++) {
                 let idx = indices[i];
                 if (linha.length > idx && linha[idx]) {
                     let valor = linha[idx].toString().toUpperCase().trim();
-                    if (valor === codigoDesejado) {
+                    // Checa se é exatamente a letra, ou se a letra vem seguida de um espaço ou quebra de linha
+                    if (valor === codigoDesejado || 
+                        valor.startsWith(codigoDesejado + " ") || 
+                        valor.startsWith(codigoDesejado + "\n") || 
+                        valor.startsWith(codigoDesejado + "-")) {
                         return true;
                     }
                 }
@@ -251,19 +263,25 @@
                     'maxResults': 2500
                 });
 
-                // ISOLAMENTO DE ABAS: Só carrega da agenda o que foi criado POR ESTA ABA específica
-                const eventosExistentes = (responseCal.result.items || []).filter(ev => 
-                    ev.description && 
-                    ev.description.includes('Gerado automaticamente via Web App') &&
-                    ev.description.includes(`(${tituloAba})`)
+                let mapaExistentes = {};
+                
+                // Filtra todos os eventos gerados pelo App no período
+                const eventosApp = (responseCal.result.items || []).filter(ev => 
+                    ev.description && ev.description.includes('Gerado automaticamente via Web App')
                 );
 
-                let mapaExistentes = {};
-                eventosExistentes.forEach(ev => {
-                    let dataBaseStr = ev.start.date || (ev.start.dateTime ? ev.start.dateTime.substring(0, 10) : null);
-                    if (dataBaseStr && ev.summary) {
-                        const chave = `${dataBaseStr}_${ev.summary.toUpperCase().trim()}`;
-                        mapaExistentes[chave] = ev;
+                eventosApp.forEach(ev => {
+                    // 1. Tenta achar pelo Carimbo Invisível (appKey)
+                    if (ev.extendedProperties && ev.extendedProperties.private && ev.extendedProperties.private.appKey) {
+                        const appKey = ev.extendedProperties.private.appKey;
+                        // Só adiciona no mapa se a chave pertencer a ABA atual
+                        if (appKey.startsWith(`${tituloAba}_`)) {
+                            mapaExistentes[appKey] = ev;
+                        }
+                    } 
+                    // 2. Se for um evento velho sem carimbo, identifica pela descrição e força exclusão
+                    else if (ev.description.includes(`(${tituloAba})`)) {
+                        mapaExistentes[`OLD_${ev.id}`] = ev; 
                     }
                 });
 
@@ -274,10 +292,9 @@
                 });
                 
                 const linhas = responseSheets.result.values;
-                if (!linhas || linhas.length === 0) return null;
+                if (!linhas || linhas.length === 0) return { inseridos: 0, removidos: 0, mantidos: 0 };
 
                 let turnosDesejados = [];
-                
                 const isCMM = tituloAba.toUpperCase().includes('CMM');
 
                 for (let i = 0; i < linhas.length; i++) {
@@ -286,7 +303,6 @@
 
                     const diaStr = linha[0].toString().trim();
                     const dia = parseInt(diaStr);
-                    
                     if (isNaN(dia) || dia < 1 || dia > 31) continue; 
 
                     const dataBaseStr = `${anoEscala}-${mesEscala}-${String(dia).padStart(2, '0')}`;
