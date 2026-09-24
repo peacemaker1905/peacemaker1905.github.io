@@ -225,6 +225,20 @@
             };
         }
 
+        // Função segura para checar se a letra existe nas colunas informadas
+        function verificaTurno(linha, indices, codigoDesejado) {
+            for (let i = 0; i < indices.length; i++) {
+                let idx = indices[i];
+                if (linha.length > idx && linha[idx]) {
+                    let valor = linha[idx].toString().toUpperCase().trim();
+                    if (valor === codigoDesejado) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
         async function processarUnicaAba(codigoOperador, tituloAba, mesEscala, anoEscala) {
             try {
                 const primeiroDia = new Date(anoEscala, parseInt(mesEscala) - 1, 1).toISOString();
@@ -237,8 +251,11 @@
                     'maxResults': 2500
                 });
 
+                // ISOLAMENTO DE ABAS: Só carrega da agenda o que foi criado POR ESTA ABA específica
                 const eventosExistentes = (responseCal.result.items || []).filter(ev => 
-                    ev.description && ev.description.includes('Gerado automaticamente via Web App')
+                    ev.description && 
+                    ev.description.includes('Gerado automaticamente via Web App') &&
+                    ev.description.includes(`(${tituloAba})`)
                 );
 
                 let mapaExistentes = {};
@@ -250,7 +267,6 @@
                     }
                 });
 
-                // Expandido até a coluna K (índice 10)
                 const rangeDinamico = `'${tituloAba}'!A10:K45`;
                 const responseSheets = await gapi.client.sheets.spreadsheets.values.get({
                     spreadsheetId: SPREADSHEET_ID,
@@ -276,27 +292,22 @@
                     const dataBaseStr = `${anoEscala}-${mesEscala}-${String(dia).padStart(2, '0')}`;
 
                     // --- 1º Turno (Colunas C, D, E) [índices 2, 3, 4] -> IGUAL PARA EMS E CMM ---
-                    const turno1 = [linha[2], linha[3], linha[4]];
-                    if (turno1.some(cel => cel && cel.toString().toUpperCase().trim() === codigoOperador)) {
+                    if (verificaTurno(linha, [2, 3, 4], codigoOperador)) {
                         turnosDesejados.push(criarObjetoEvento("1º TURNO", dataBaseStr, anoEscala, mesEscala, dia, tituloAba));
                     }
 
                     if (isCMM) {
                         // --- 2º Turno CMM (Colunas F, G, H) [índices 5, 6, 7] ---
-                        const turno2 = [linha[5], linha[6], linha[7]];
-                        if (turno2.some(cel => cel && cel.toString().toUpperCase().trim() === codigoOperador)) {
+                        if (verificaTurno(linha, [5, 6, 7], codigoOperador)) {
                             turnosDesejados.push(criarObjetoEvento("2º TURNO", dataBaseStr, anoEscala, mesEscala, dia, tituloAba));
                         }
-
                         // --- 3º Turno CMM (Colunas I, J, K) [índices 8, 9, 10] ---
-                        const turno3 = [linha[8], linha[9], linha[10]];
-                        if (turno3.some(cel => cel && cel.toString().toUpperCase().trim() === codigoOperador)) {
+                        if (verificaTurno(linha, [8, 9, 10], codigoOperador)) {
                             turnosDesejados.push(criarObjetoEvento("3º TURNO", dataBaseStr, anoEscala, mesEscala, dia, tituloAba));
                         }
                     } else {
                         // --- 2º Turno EMS (Colunas F, G) [índices 5, 6] ---
-                        const turno2 = [linha[5], linha[6]];
-                        if (turno2.some(cel => cel && cel.toString().toUpperCase().trim() === codigoOperador)) {
+                        if (verificaTurno(linha, [5, 6], codigoOperador)) {
                             turnosDesejados.push(criarObjetoEvento("2º TURNO", dataBaseStr, anoEscala, mesEscala, dia, tituloAba));
                         }
                     }
