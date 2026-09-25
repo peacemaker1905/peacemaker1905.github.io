@@ -3,36 +3,36 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sincronizador de Escala - Turnos</title>
+    <title>Sincronizador de Escala ATCO TWR-AN</title>
     <style>
         body { font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: auto; }
         button { padding: 10px 20px; font-size: 16px; margin-top: 10px; cursor: pointer; background-color: #4285F4; color: white; border: none; border-radius: 5px; }
         button:disabled { background-color: #cccccc; cursor: not-allowed; }
         #syncBtn { background-color: #34A853; width: 100%; font-weight: bold; }
-        #status { margin-top: 20px; padding: 10px; border-radius: 5px; background: #f0f0f0; white-space: pre-line; }
+        #status { margin-top: 20px; padding: 10px; border-radius: 5px; background: #f0f0f0; }
         .input-group { margin: 15px 0; }
-        input[type="text"] { padding: 10px; width: 100%; box-sizing: border-box; font-size: 16px; text-transform: uppercase;}
+        input[type="text"] { padding: 10px; width: 100%; box-sizing: border-box; font-size: 16px;}
         .checkbox-container { background: #eef2f3; padding: 15px; border-radius: 5px; margin: 15px 0; display: none; }
         .checkbox-item { margin-bottom: 8px; font-size: 16px; }
     </style>
 </head>
 <body>
 
-    <h2>Sincronizador de Escala</h2>
+    <h2>Sincronizador de Escala ATCO TWR-AN</h2>
     
     <div class="input-group">
-        <label>Digite seu Código de Operador (Letra exata da escala):</label>
-        <input type="text" id="codigoOperador" placeholder="Ex: C, I, W, M, R, T, L">
+        <label>Digite seu Nome de Guerra (exatamente como está na planilha):</label>
+        <input type="text" id="nomeMilitar" placeholder="Ex: SO AZEVEDO">
     </div>
 
     <button id="authBtn" onclick="handleAuthClick()">1. Fazer Login no Google</button>
     
     <div id="containerAbas" class="checkbox-container">
-        <label><b>Selecione as abas/meses disponíveis para sincronizar:</b></label>
+        <label><b>Selecione as escalas disponíveis para sincronizar:</b></label>
         <div id="listaAbas"></div>
     </div>
 
-    <button id="syncBtn" onclick="sincronizarAbasSelecionadas()" style="display:none;" disabled>2. Sincronizar Escalas Selecionadas</button>
+    <button id="syncBtn" onclick="sincronizarAbasSelecionadas()" style="display:none;" disabled>2. Sincronizar Abas Selecionadas</button>
 
     <div id="status">Aguardando login...</div>
 
@@ -41,7 +41,7 @@
 
     <script>
         const CLIENT_ID = '118048571551-37il00plhko6shv5cie9tsi4hbq8cdlk.apps.googleusercontent.com'; 
-        const SPREADSHEET_ID = '1viBph-E4vnDqA2E8XJJXEAoXUSAwbY73Qhymc_VJZrA';
+        const SPREADSHEET_ID = '1PiE9_fXzQdQcFDARrs1ZmNoi2LKZZ56pFQgJsxp_QZU';
 
         const mapeamentoMeses = [
             { num: "01", chaves: ["JAN"] }, { num: "02", chaves: ["FEV"] },
@@ -53,9 +53,28 @@
         ];
 
         const turnos = {
-            "1º TURNO": { inicio: "06:45:00", fim: "18:45:00", pernoite: false, cor: "7" }, // Azul
-            "2º TURNO": { inicio: "18:45:00", fim: "06:45:00", pernoite: true, cor: "9" },  // Roxo
-            "3º TURNO": { inicio: "07:00:00", fim: "19:00:00", pernoite: false, cor: "10" } // Verde
+            "M": { inicio: "06:45:00", fim: "14:15:00", pernoite: false },
+            "MR": { inicio: "08:00:00", fim: "14:00:00", pernoite: false },
+            "R": { inicio: "08:00:00", fim: "17:00:00", pernoite: false },
+            "T": { inicio: "14:15:00", fim: "23:15:00", pernoite: false },
+            "TR": { inicio: "14:00:00", fim: "21:00:00", pernoite: false },
+            "P": { inicio: "23:15:00", fim: "06:45:00", pernoite: true },
+            "S": { inicio: "08:00:00", fim: "17:00:00", pernoite: false },
+            "ADM": { inicio: "08:00:00", fim: "16:00:00", pernoite: false },
+            "RIS": { inicio: "06:45:00", fim: "06:45:00", pernoite: true },
+            "REU": { inicio: "08:00:00", fim: "16:00:00", pernoite: false },
+            "DOU": { inicio: "08:00:00", fim: "16:00:00", pernoite: false },
+            "ING": { inicio: "08:00:00", fim: "16:00:00", pernoite: false },
+            "TO": { inicio: "08:00:00", fim: "16:00:00", pernoite: false }
+        };
+        const afastamentos = ["FÉR", "MISS", "CUR", "LUT", "DM", "FOR"];
+        
+        const corAfastamento = "4"; 
+        const corDesconhecido = "5"; 
+        const coresTurnos = {
+            "M": "7", "MR": "7", "R": "10", "T": "6", "TR": "6", 
+            "P": "9", "S": "11", "ADM": "8", "RIS": "3", "REU": "1", 
+            "DOU": "1", "ING": "1", "TO": "1" 
         };
 
         let tokenClient;
@@ -96,7 +115,9 @@
 
             const regexAno = /20\d{2}/;
             const matchAno = nomeStr.match(regexAno);
-            if (matchAno) anoEncontrado = matchAno[0];
+            if (matchAno) {
+                anoEncontrado = matchAno[0];
+            }
 
             for (let i = 0; i < mapeamentoMeses.length; i++) {
                 const map = mapeamentoMeses[i];
@@ -106,12 +127,14 @@
                 }
             }
 
-            if (mesEncontrado) return { tituloOriginal: titulo, mes: mesEncontrado, ano: anoEncontrado };
+            if (mesEncontrado) {
+                return { tituloOriginal: titulo, mes: mesEncontrado, ano: anoEncontrado };
+            }
             return null; 
         }
 
         async function buscarAbasDaPlanilha() {
-            atualizarStatus("Analisando abas da planilha...");
+            atualizarStatus("Analisando estrutura da planilha...");
             try {
                 const response = await gapi.client.sheets.spreadsheets.get({
                     spreadsheetId: SPREADSHEET_ID
@@ -131,7 +154,7 @@
                             <div class="checkbox-item">
                                 <label>
                                     <input type="checkbox" class="aba-selecionada" value="${dadosAba.tituloOriginal}" data-mes="${dadosAba.mes}" data-ano="${dadosAba.ano}" checked>
-                                    ${dadosAba.tituloOriginal} (Mês ${dadosAba.mes}/${dadosAba.ano})
+                                    ${dadosAba.tituloOriginal} (Ref: ${dadosAba.mes}/${dadosAba.ano})
                                 </label>
                             </div>
                         `;
@@ -143,27 +166,21 @@
                     document.getElementById('containerAbas').style.display = 'block';
                     document.getElementById('syncBtn').style.display = 'inline-block';
                     document.getElementById('syncBtn').disabled = false;
-                    atualizarStatus("Planilha lida! Selecione as abas e clique em Sincronizar.");
+                    atualizarStatus("Planilha lida com sucesso! Selecione as escalas e clique em Sincronizar.");
                 } else {
                     atualizarStatus("Aviso: Nenhuma aba visível correspondente a meses foi encontrada.");
                 }
 
             } catch (err) {
                 console.error(err);
-                let msgErro = "Erro desconhecido.";
-                if (err.result && err.result.error && err.result.error.message) {
-                    msgErro = err.result.error.message;
-                } else if (err.message) {
-                    msgErro = err.message;
-                }
-                atualizarStatus("Erro ao conectar com a planilha: " + msgErro);
+                atualizarStatus("Erro ao conectar com a planilha: " + err.message);
             }
         }
 
         async function sincronizarAbasSelecionadas() {
-            const codigoDigitado = document.getElementById('codigoOperador').value.toUpperCase().trim();
-            if(!codigoDigitado) {
-                alert("Preencha o Código do Operador antes de sincronizar.");
+            const nomeDigitado = document.getElementById('nomeMilitar').value.toUpperCase().trim();
+            if(!nomeDigitado) {
+                alert("Preencha o Nome antes de sincronizar.");
                 return;
             }
 
@@ -184,9 +201,9 @@
                 const mesAba = box.getAttribute('data-mes');
                 const anoAba = box.getAttribute('data-ano');
 
-                atualizarStatus(`Processando aba: ${nomeAba} (${i+1}/${checkboxes.length})...`);
+                atualizarStatus(`Processando: ${nomeAba} (${i+1}/${checkboxes.length})...`);
                 
-                const resultado = await processarUnicaAba(codigoDigitado, nomeAba, mesAba, anoAba);
+                const resultado = await processarUnicaAba(nomeDigitado, nomeAba, mesAba, anoAba);
                 if (resultado) {
                     totalInseridos += resultado.inseridos;
                     totalRemovidos += resultado.removidos;
@@ -194,67 +211,15 @@
                 }
             }
 
-            atualizarStatus(`Processo Concluído!\n🟢 ${totalInseridos} turnos adicionados\n🔴 ${totalRemovidos} turnos deletados (escala alterada ou atualização de sistema)\n⚪ ${totalMantidos} turnos idênticos mantidos.`);
+            atualizarStatus(`Processo Concluído! \n🟢 ${totalInseridos} novos turnos adicionados \n🔴 ${totalRemovidos} turnos deletados (escala alterada) \n⚪ ${totalMantidos} turnos já existiam e foram mantidos.`);
             document.getElementById('syncBtn').disabled = false;
         }
 
-        function criarObjetoEvento(nomeTurno, dataBaseStr, anoEscala, mesEscala, dia, tituloAba) {
-            const tInfo = turnos[nomeTurno];
-            
-            // Criação da Chave Única e Blindada para o App
-            const chaveUnica = `${tituloAba}_${dataBaseStr}_${nomeTurno}`;
-
-            let evento = {
-                'summary': nomeTurno,
-                'description': `Gerado automaticamente via Web App (${tituloAba})`,
-                'colorId': tInfo.cor,
-                'extendedProperties': {
-                    'private': {
-                        'appKey': chaveUnica // O carimbo invisível do evento!
-                    }
-                }
-            };
-
-            evento.start = { 'dateTime': `${dataBaseStr}T${tInfo.inicio}-03:00`, 'timeZone': 'America/Sao_Paulo' };
-            
-            let dataFimStr = dataBaseStr;
-            if (tInfo.pernoite) { 
-                let nextDate = new Date(anoEscala, parseInt(mesEscala)-1, dia + 1);
-                const y = nextDate.getFullYear();
-                const m = String(nextDate.getMonth() + 1).padStart(2, '0');
-                const d = String(nextDate.getDate()).padStart(2, '0');
-                dataFimStr = `${y}-${m}-${d}`;
-            }
-            evento.end = { 'dateTime': `${dataFimStr}T${tInfo.fim}-03:00`, 'timeZone': 'America/Sao_Paulo' };
-
-            return {
-                chave: chaveUnica, 
-                corpo: evento
-            };
-        }
-
-        // Função melhorada que entende se a célula tem o nome todo (ex: "C 2S BMT CÍNTIA") ou só a letra
-        function verificaTurno(linha, indices, codigoDesejado) {
-            for (let i = 0; i < indices.length; i++) {
-                let idx = indices[i];
-                if (linha.length > idx && linha[idx]) {
-                    let valor = linha[idx].toString().toUpperCase().trim();
-                    // Checa se é exatamente a letra, ou se a letra vem seguida de um espaço ou quebra de linha
-                    if (valor === codigoDesejado || 
-                        valor.startsWith(codigoDesejado + " ") || 
-                        valor.startsWith(codigoDesejado + "\n") || 
-                        valor.startsWith(codigoDesejado + "-")) {
-                        return true;
-                    }
-                }
-            }
-            return false;
-        }
-
-        async function processarUnicaAba(codigoOperador, tituloAba, mesEscala, anoEscala) {
+        async function processarUnicaAba(nomeMilitar, tituloAba, mesEscala, anoEscala) {
             try {
+                // 1. LER AGENDA ATUAL (BUSCAR EVENTOS EXISTENTES)
                 const primeiroDia = new Date(anoEscala, parseInt(mesEscala) - 1, 1).toISOString();
-                const ultimoDia = new Date(anoEscala, parseInt(mesEscala), 1).toISOString();
+                const ultimoDia = new Date(anoEscala, parseInt(mesEscala), 1).toISOString(); // 1º dia do mês seguinte
 
                 const responseCal = await gapi.client.calendar.events.list({
                     'calendarId': 'primary',
@@ -263,78 +228,104 @@
                     'maxResults': 2500
                 });
 
-                let mapaExistentes = {};
-                
-                // Filtra todos os eventos gerados pelo App no período
-                const eventosApp = (responseCal.result.items || []).filter(ev => 
+                // Filtra apenas eventos criados pelo sistema
+                const eventosExistentes = (responseCal.result.items || []).filter(ev => 
                     ev.description && ev.description.includes('Gerado automaticamente via Web App')
                 );
 
-                eventosApp.forEach(ev => {
-                    // 1. Tenta achar pelo Carimbo Invisível (appKey)
-                    if (ev.extendedProperties && ev.extendedProperties.private && ev.extendedProperties.private.appKey) {
-                        const appKey = ev.extendedProperties.private.appKey;
-                        // Só adiciona no mapa se a chave pertencer a ABA atual
-                        if (appKey.startsWith(`${tituloAba}_`)) {
-                            mapaExistentes[appKey] = ev;
-                        }
-                    } 
-                    // 2. Se for um evento velho sem carimbo, identifica pela descrição e força exclusão
-                    else if (ev.description.includes(`(${tituloAba})`)) {
-                        mapaExistentes[`OLD_${ev.id}`] = ev; 
+                // Mapeia eventos existentes por chave única: "DATA_TURNO" (Ex: "2026-09-01_M")
+                let mapaExistentes = {};
+                eventosExistentes.forEach(ev => {
+                    let dataBaseStr = ev.start.date || (ev.start.dateTime ? ev.start.dateTime.substring(0, 10) : null);
+                    if (dataBaseStr && ev.summary) {
+                        const chave = `${dataBaseStr}_${ev.summary.toUpperCase().trim()}`;
+                        mapaExistentes[chave] = ev;
                     }
                 });
 
-                const rangeDinamico = `'${tituloAba}'!A10:K45`;
+
+                // 2. LER PLANILHA (CRIAR LISTA DESEJADA)
+                const rangeDinamico = `'${tituloAba}'!A1:AJ50`;
                 const responseSheets = await gapi.client.sheets.spreadsheets.values.get({
                     spreadsheetId: SPREADSHEET_ID,
                     range: rangeDinamico,
                 });
                 
                 const linhas = responseSheets.result.values;
-                if (!linhas || linhas.length === 0) return { inseridos: 0, removidos: 0, mantidos: 0 };
+                if (!linhas || linhas.length === 0) return null;
 
-                let turnosDesejados = [];
-                const isCMM = tituloAba.toUpperCase().includes('CMM');
-
+                let linhaMilitarEncontrada = null;
                 for (let i = 0; i < linhas.length; i++) {
-                    const linha = linhas[i];
-                    if (!linha || !linha[0]) continue; 
-
-                    const diaStr = linha[0].toString().trim();
-                    const dia = parseInt(diaStr);
-                    if (isNaN(dia) || dia < 1 || dia > 31) continue; 
-
-                    const dataBaseStr = `${anoEscala}-${mesEscala}-${String(dia).padStart(2, '0')}`;
-
-                    // --- 1º Turno (Colunas C, D, E) [índices 2, 3, 4] -> IGUAL PARA EMS E CMM ---
-                    if (verificaTurno(linha, [2, 3, 4], codigoOperador)) {
-                        turnosDesejados.push(criarObjetoEvento("1º TURNO", dataBaseStr, anoEscala, mesEscala, dia, tituloAba));
-                    }
-
-                    if (isCMM) {
-                        // --- 2º Turno CMM (Colunas F, G, H) [índices 5, 6, 7] ---
-                        if (verificaTurno(linha, [5, 6, 7], codigoOperador)) {
-                            turnosDesejados.push(criarObjetoEvento("2º TURNO", dataBaseStr, anoEscala, mesEscala, dia, tituloAba));
-                        }
-                        // --- 3º Turno CMM (Colunas I, J, K) [índices 8, 9, 10] ---
-                        if (verificaTurno(linha, [8, 9, 10], codigoOperador)) {
-                            turnosDesejados.push(criarObjetoEvento("3º TURNO", dataBaseStr, anoEscala, mesEscala, dia, tituloAba));
-                        }
-                    } else {
-                        // --- 2º Turno EMS (Colunas F, G) [índices 5, 6] ---
-                        if (verificaTurno(linha, [5, 6], codigoOperador)) {
-                            turnosDesejados.push(criarObjetoEvento("2º TURNO", dataBaseStr, anoEscala, mesEscala, dia, tituloAba));
-                        }
+                    let celulaA = linhas[i][0] ? linhas[i][0].toString().toUpperCase() : "";
+                    let celulaB = linhas[i][1] ? linhas[i][1].toString().toUpperCase() : "";
+                    
+                    if (celulaB.includes(nomeMilitar) || celulaA.includes(nomeMilitar)) {
+                        linhaMilitarEncontrada = linhas[i];
+                        break;
                     }
                 }
 
+                if (!linhaMilitarEncontrada) {
+                    console.warn(`Militar não encontrado na aba: ${tituloAba}`);
+                    return null; 
+                }
+
+                let turnosDesejados = [];
+
+                for (let dia = 1; dia <= 31; dia++) {
+                    let indiceColuna = dia + 1; 
+                    const conteudoCelula = linhaMilitarEncontrada[indiceColuna];
+                    
+                    if (!conteudoCelula || conteudoCelula.toString().trim() === "") continue;
+
+                    const dataBaseStr = `${anoEscala}-${mesEscala}-${String(dia).padStart(2, '0')}`;
+                    const turnosDoDia = conteudoCelula.toString().toUpperCase().split(/[\/\n]+/).map(t => t.trim()).filter(t => t !== "");
+
+                    for (const codTurno of turnosDoDia) {
+                        let evento = {
+                            'summary': codTurno,
+                            'description': `Gerado automaticamente via Web App (${tituloAba})`
+                        };
+
+                        if (afastamentos.includes(codTurno)) {
+                            evento.start = { 'date': dataBaseStr, 'timeZone': 'America/Sao_Paulo' };
+                            let endDate = new Date(anoEscala, parseInt(mesEscala)-1, dia + 1);
+                            evento.end = { 'date': endDate.toISOString().split('T')[0], 'timeZone': 'America/Sao_Paulo' };
+                            evento.colorId = corAfastamento;
+                        } 
+                        else if (turnos[codTurno]) {
+                            const tInfo = turnos[codTurno];
+                            evento.start = { 'dateTime': `${dataBaseStr}T${tInfo.inicio}-03:00`, 'timeZone': 'America/Sao_Paulo' };
+                            
+                            let dataFimStr = dataBaseStr;
+                            if (tInfo.pernoite) {
+                                let nextDate = new Date(anoEscala, parseInt(mesEscala)-1, dia + 1);
+                                dataFimStr = nextDate.toISOString().split('T')[0];
+                            }
+                            evento.end = { 'dateTime': `${dataFimStr}T${tInfo.fim}-03:00`, 'timeZone': 'America/Sao_Paulo' };
+                            evento.colorId = coresTurnos[codTurno]; 
+                        } 
+                        else {
+                            evento.start = { 'dateTime': `${dataBaseStr}T08:00:00-03:00`, 'timeZone': 'America/Sao_Paulo' };
+                            evento.end = { 'dateTime': `${dataBaseStr}T16:00:00-03:00`, 'timeZone': 'America/Sao_Paulo' };
+                            evento.colorId = corDesconhecido;
+                        }
+
+                        turnosDesejados.push({
+                            chave: `${dataBaseStr}_${codTurno}`,
+                            corpo: evento
+                        });
+                    }
+                }
+
+                // 3. COMPARAR E APLICAR (O DIFF MÁGICO)
                 let inseridos = 0;
                 let removidos = 0;
                 let mantidos = 0;
 
                 const chavesDesejadas = turnosDesejados.map(t => t.chave);
 
+                // A) Apagar eventos antigos (Na agenda, mas não na planilha atual)
                 for (const chaveExistente in mapaExistentes) {
                     if (!chavesDesejadas.includes(chaveExistente)) {
                         await gapi.client.calendar.events.delete({
@@ -345,6 +336,7 @@
                     }
                 }
 
+                // B) Criar eventos novos ou Manter os que já bateram
                 for (const turno of turnosDesejados) {
                     if (!mapaExistentes[turno.chave]) {
                         await gapi.client.calendar.events.insert({
@@ -353,7 +345,7 @@
                         });
                         inseridos++;
                     } else {
-                        mantidos++; 
+                        mantidos++; // Já existe na agenda, ignora a inserção
                     }
                 }
 
